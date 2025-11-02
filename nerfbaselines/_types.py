@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import dataclasses
 import os
 import numpy as np
+
 try:
     from typing import Self
 except ImportError:
@@ -61,9 +62,7 @@ NB_PREFIX = os.path.expanduser(os.environ.get("NERFBASELINES_PREFIX", "~/.cache/
 ColorSpace = Literal["srgb", "linear"]
 CameraModel = Literal["pinhole", "opencv", "opencv_fisheye", "full_opencv"]
 BackendName = Literal["conda", "docker", "apptainer", "python"]
-DatasetFeature = Literal["color", "points3D_xyz", "points3D_rgb", 
-                         "images_points3D_indices", "images_points2D_xy",
-                         "points3D_error"]
+DatasetFeature = Literal["color", "points3D_xyz", "points3D_rgb", "images_points3D_indices", "images_points2D_xy", "points3D_error"]
 TTensor = TypeVar("TTensor", np.ndarray, "torch.Tensor", "jnp.ndarray")
 TTensor_co = TypeVar("TTensor_co", np.ndarray, "torch.Tensor", "jnp.ndarray", covariant=True)
 
@@ -72,22 +71,24 @@ TTensor_co = TypeVar("TTensor_co", np.ndarray, "torch.Tensor", "jnp.ndarray", co
 def _get_xnp(tensor: np.ndarray):
     return np
 
-@overload
-def _get_xnp(tensor: 'jnp.ndarray'):
-    return cast('jnp', sys.modules["jax.numpy"])
 
 @overload
-def _get_xnp(tensor: 'torch.Tensor'):
-    return cast('torch', sys.modules["torch"])
+def _get_xnp(tensor: "jnp.ndarray"):
+    return cast("jnp", sys.modules["jax.numpy"])
+
+
+@overload
+def _get_xnp(tensor: "torch.Tensor"):
+    return cast("torch", sys.modules["torch"])
 
 
 def _get_xnp(tensor: TTensor):
     if isinstance(tensor, np.ndarray):
         return np
     if tensor.__module__.startswith("jax"):
-        return cast('jnp', sys.modules["jax.numpy"])
+        return cast("jnp", sys.modules["jax.numpy"])
     if tensor.__module__ == "torch":
-        return cast('torch', sys.modules["torch"])
+        return cast("torch", sys.modules["torch"])
     raise ValueError(f"Unknown tensor type {type(tensor)}")
 
 
@@ -141,31 +142,24 @@ class GenericCameras(Protocol[TTensor_co]):
         """Metadata, [N, ...]"""
         ...
 
-    def __len__(self) -> int:
-        ...
+    def __len__(self) -> int: ...
 
     def item(self) -> Self:
         """Returns a single camera if there is only one. Otherwise raises an error."""
         ...
 
-    def __getitem__(self, index) -> Self:
-        ...
+    def __getitem__(self, index) -> Self: ...
 
-    def __setitem__(self, index, value: Self) -> None:
-        ...
+    def __setitem__(self, index, value: Self) -> None: ...
 
-    def __iter__(self) -> Iterator[Self]:
-        ...
+    def __iter__(self) -> Iterator[Self]: ...
 
     @classmethod
-    def cat(cls, values: Sequence[Self]) -> Self:
-        ...
+    def cat(cls, values: Sequence[Self]) -> Self: ...
 
-    def replace(self, **changes) -> Self:
-        ...
+    def replace(self, **changes) -> Self: ...
 
-    def apply(self, fn: Callable[[TTensor_co, str], TTensor]) -> 'GenericCameras[TTensor]':
-        ...
+    def apply(self, fn: Callable[[TTensor_co, str], TTensor]) -> "GenericCameras[TTensor]": ...
 
 
 @runtime_checkable
@@ -244,7 +238,7 @@ class GenericCamerasImpl(Generic[TTensor_co]):
     def replace(self, **changes) -> Self:
         return dataclasses.replace(self, **changes)
 
-    def apply(self, fn: Callable[[TTensor_co, str], TTensor]) -> 'GenericCamerasImpl[TTensor]':
+    def apply(self, fn: Callable[[TTensor_co, str], TTensor]) -> "GenericCamerasImpl[TTensor]":
         return GenericCamerasImpl[TTensor](
             poses=fn(self.poses, "poses"),
             intrinsics=fn(self.intrinsics, "intrinsics"),
@@ -271,14 +265,9 @@ def new_cameras(
         shape[-1] = 0
         distortion_parameters = np.zeros(tuple(shape), dtype=intrinsics.dtype)
     return GenericCamerasImpl[np.ndarray](
-        poses=poses,
-        intrinsics=intrinsics,
-        camera_models=camera_models,
-        distortion_parameters=distortion_parameters,
-        image_sizes=image_sizes,
-        nears_fars=nears_fars,
-        metadata=metadata)
-    
+        poses=poses, intrinsics=intrinsics, camera_models=camera_models, distortion_parameters=distortion_parameters, image_sizes=image_sizes, nears_fars=nears_fars, metadata=metadata
+    )
+
 
 class _IncompleteDataset(TypedDict, total=True):
     cameras: Cameras  # [N]
@@ -305,55 +294,59 @@ class Dataset(_IncompleteDataset):
 
 
 @overload
-def new_dataset(*,
-                cameras: Cameras,
-                image_paths: Sequence[str],
-                image_paths_root: Optional[str] = ...,
-                images: Union[np.ndarray, List[np.ndarray]],
-                mask_paths: Optional[Sequence[str]] = ...,
-                mask_paths_root: Optional[str] = ...,
-                masks: Optional[Union[np.ndarray, List[np.ndarray]]] = ...,  # [N][H, W]
-                points3D_xyz: Optional[np.ndarray] = ...,  # [M, 3]
-                points3D_rgb: Optional[np.ndarray] = ...,  # [M, 3]
-                points3D_error: Optional[np.ndarray] = ...,  # [M]
-                images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
-                images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
-                metadata: Optional[Dict] = ...) -> Dataset:
-    ...
+def new_dataset(
+    *,
+    cameras: Cameras,
+    image_paths: Sequence[str],
+    image_paths_root: Optional[str] = ...,
+    images: Union[np.ndarray, List[np.ndarray]],
+    mask_paths: Optional[Sequence[str]] = ...,
+    mask_paths_root: Optional[str] = ...,
+    masks: Optional[Union[np.ndarray, List[np.ndarray]]] = ...,  # [N][H, W]
+    points3D_xyz: Optional[np.ndarray] = ...,  # [M, 3]
+    points3D_rgb: Optional[np.ndarray] = ...,  # [M, 3]
+    points3D_error: Optional[np.ndarray] = ...,  # [M]
+    images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
+    images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
+    metadata: Optional[Dict] = ...,
+) -> Dataset: ...
 
 
 @overload
-def new_dataset(*,
-                cameras: Cameras,
-                image_paths: Sequence[str],
-                image_paths_root: Optional[str] = ...,
-                images: Literal[None] = None,
-                mask_paths: Optional[Sequence[str]] = ...,
-                mask_paths_root: Optional[str] = ...,
-                masks: Optional[Union[np.ndarray, List[np.ndarray]]] = ...,  # [N][H, W]
-                points3D_xyz: Optional[np.ndarray] = ...,  # [M, 3]
-                points3D_rgb: Optional[np.ndarray] = ...,  # [M, 3]
-                points3D_error: Optional[np.ndarray] = ...,  # [M]
-                images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
-                images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
-                metadata: Optional[Dict] = ...) -> UnloadedDataset:
-    ...
+def new_dataset(
+    *,
+    cameras: Cameras,
+    image_paths: Sequence[str],
+    image_paths_root: Optional[str] = ...,
+    images: Literal[None] = None,
+    mask_paths: Optional[Sequence[str]] = ...,
+    mask_paths_root: Optional[str] = ...,
+    masks: Optional[Union[np.ndarray, List[np.ndarray]]] = ...,  # [N][H, W]
+    points3D_xyz: Optional[np.ndarray] = ...,  # [M, 3]
+    points3D_rgb: Optional[np.ndarray] = ...,  # [M, 3]
+    points3D_error: Optional[np.ndarray] = ...,  # [M]
+    images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
+    images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
+    metadata: Optional[Dict] = ...,
+) -> UnloadedDataset: ...
 
 
-def new_dataset(*,
-                cameras: Cameras,
-                image_paths: Sequence[str],
-                image_paths_root: Optional[str] = None,
-                images: Optional[Union[np.ndarray, List[np.ndarray]]] = None,  # [N][H, W, 3]
-                mask_paths: Optional[Sequence[str]] = None,
-                mask_paths_root: Optional[str] = None,
-                masks: Optional[Union[np.ndarray, List[np.ndarray]]] = None,  # [N][H, W]
-                points3D_xyz: Optional[np.ndarray] = None,  # [M, 3]
-                points3D_rgb: Optional[np.ndarray] = None,  # [M, 3]
-                points3D_error: Optional[np.ndarray] = None,  # [M]
-                images_points3D_indices: Optional[Sequence[np.ndarray]] = None,  # [N][<M]
-                images_points2D_xy: Optional[Sequence[np.ndarray]] = None,  # [N][<M, 2]
-                metadata: Optional[Dict] = None) -> Union[UnloadedDataset, Dataset]:
+def new_dataset(
+    *,
+    cameras: Cameras,
+    image_paths: Sequence[str],
+    image_paths_root: Optional[str] = None,
+    images: Optional[Union[np.ndarray, List[np.ndarray]]] = None,  # [N][H, W, 3]
+    mask_paths: Optional[Sequence[str]] = None,
+    mask_paths_root: Optional[str] = None,
+    masks: Optional[Union[np.ndarray, List[np.ndarray]]] = None,  # [N][H, W]
+    points3D_xyz: Optional[np.ndarray] = None,  # [M, 3]
+    points3D_rgb: Optional[np.ndarray] = None,  # [M, 3]
+    points3D_error: Optional[np.ndarray] = None,  # [M]
+    images_points3D_indices: Optional[Sequence[np.ndarray]] = None,  # [N][<M]
+    images_points2D_xy: Optional[Sequence[np.ndarray]] = None,  # [N][<M, 2]
+    metadata: Optional[Dict] = None,
+) -> Union[UnloadedDataset, Dataset]:
     if image_paths_root is None:
         image_paths_root = os.path.commonpath(image_paths)
     if mask_paths_root is None and mask_paths is not None:
@@ -375,7 +368,7 @@ def new_dataset(*,
         points3D_error=points3D_error,
         images_points3D_indices=list(images_points3D_indices) if images_points3D_indices is not None else None,
         images_points2D_xy=list(images_points2D_xy) if images_points2D_xy is not None else None,
-        metadata=metadata
+        metadata=metadata,
     )
 
 
@@ -429,11 +422,7 @@ class RenderOptions(TypedDict, total=False):
 
 @runtime_checkable
 class Method(Protocol):
-    def __init__(self, 
-                 *,
-                 checkpoint: Union[str, None] = None,
-                 train_dataset: Optional[Dataset] = None,
-                 config_overrides: Optional[Dict[str, Any]] = None):
+    def __init__(self, *, checkpoint: Union[str, None] = None, train_dataset: Optional[Dataset] = None, config_overrides: Optional[Dict[str, Any]] = None):
         pass
 
     @classmethod
@@ -469,9 +458,7 @@ class Method(Protocol):
         """
         return None
 
-    def optimize_embedding(self, 
-                           dataset: Dataset, *,
-                           embedding: Optional[np.ndarray] = None) -> OptimizeEmbeddingOutput:
+    def optimize_embedding(self, dataset: Dataset, *, embedding: Optional[np.ndarray] = None) -> OptimizeEmbeddingOutput:
         """
         Optimize embedding for a single image (passed as a dataset with a single image).
 
@@ -482,9 +469,7 @@ class Method(Protocol):
         raise NotImplementedError()
 
     @abstractmethod
-    def render(self, 
-               camera: Cameras, *, 
-               options: Optional[RenderOptions] = None) -> RenderOutput:  # [h w c]
+    def render(self, camera: Cameras, *, options: Optional[RenderOptions] = None) -> RenderOutput:  # [h w c]
         """
         Render single image.
 
@@ -517,17 +502,13 @@ class Method(Protocol):
 
 @runtime_checkable
 class EvaluationProtocol(Protocol):
-    def get_name(self) -> str:
-        ...
-        
-    def render(self, method: Method, dataset: Dataset, *, options: Optional[RenderOptions] = None) -> RenderOutput:
-        ...
+    def get_name(self) -> str: ...
 
-    def evaluate(self, predictions: RenderOutput, dataset: Dataset) -> Dict[str, Union[float, int]]:
-        ...
+    def render(self, method: Method, dataset: Dataset, *, options: Optional[RenderOptions] = None) -> RenderOutput: ...
 
-    def accumulate_metrics(self, metrics: Iterable[Dict[str, Union[float, int]]]) -> Dict[str, Union[float, int]]:
-        ...
+    def evaluate(self, predictions: RenderOutput, dataset: Dataset) -> Dict[str, Union[float, int]]: ...
+
+    def accumulate_metrics(self, metrics: Iterable[Dict[str, Union[float, int]]]) -> Dict[str, Union[float, int]]: ...
 
 
 class LicenseSpec(TypedDict, total=False):
@@ -550,20 +531,11 @@ class DatasetSpecMetadata(TypedDict, total=False):
 
 
 class LoadDatasetFunction(Protocol):
-    def __call__(self, 
-                 path: str, 
-                 split: str, 
-                 *,
-                 features: Optional[FrozenSet[DatasetFeature]] = None, 
-                 **kwargs) -> UnloadedDataset:
-        ...
+    def __call__(self, path: str, split: str, *, features: Optional[FrozenSet[DatasetFeature]] = None, **kwargs) -> UnloadedDataset: ...
 
 
 class DownloadDatasetFunction(Protocol):
-    def __call__(self, 
-                 path: str, 
-                 output: str) -> None:
-        ...
+    def __call__(self, path: str, output: str) -> None: ...
 
 
 class TrajectoryFrameAppearance(TypedDict, total=False):
@@ -588,55 +560,35 @@ class Trajectory(TypedDict, total=True):
 
 @runtime_checkable
 class LoggerEvent(Protocol):
-    def add_scalar(self, tag: str, value: Union[float, int]) -> None:
-        ...
+    def add_scalar(self, tag: str, value: Union[float, int]) -> None: ...
 
-    def add_text(self, tag: str, text: str) -> None:
-        ...
+    def add_text(self, tag: str, text: str) -> None: ...
 
-    def add_image(self, tag: str, image: np.ndarray, display_name: Optional[str] = None, description: Optional[str] = None, **kwargs) -> None:
-        ...
+    def add_image(self, tag: str, image: np.ndarray, display_name: Optional[str] = None, description: Optional[str] = None, **kwargs) -> None: ...
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, *, 
-                      images: Optional[List[np.ndarray]] = None, 
-                      labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
-        ...
+    def add_embedding(self, tag: str, embeddings: np.ndarray, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None: ...
 
-    def add_plot(self, tag: str, *data: np.ndarray,
-                 axes_labels: Optional[Sequence[str]] = None, 
-                 title: Optional[str] = None,
-                 **kwargs) -> None:
-        ...
+    def add_plot(self, tag: str, *data: np.ndarray, axes_labels: Optional[Sequence[str]] = None, title: Optional[str] = None, **kwargs) -> None: ...
 
-    def add_histogram(self, tag: str, values: np.ndarray, *, num_bins: Optional[int] = None) -> None:
-        ...
+    def add_histogram(self, tag: str, values: np.ndarray, *, num_bins: Optional[int] = None) -> None: ...
 
 
 @runtime_checkable
 class Logger(Protocol):
-    def add_event(self, step: int) -> typing.ContextManager[LoggerEvent]:
-        ...
+    def add_event(self, step: int) -> typing.ContextManager[LoggerEvent]: ...
 
-    def add_scalar(self, tag: str, value: Union[float, int], step: int) -> None:
-        ...
+    def add_scalar(self, tag: str, value: Union[float, int], step: int) -> None: ...
 
-    def add_text(self, tag: str, text: str, step: int) -> None:
-        ...
+    def add_text(self, tag: str, text: str, step: int) -> None: ...
 
-    def add_image(self, tag: str, image: np.ndarray, step: int, *, display_name: Optional[str] = None, description: Optional[str] = None) -> None:
-        ...
+    def add_image(self, tag: str, image: np.ndarray, step: int, *, display_name: Optional[str] = None, description: Optional[str] = None) -> None: ...
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, step: int, *, 
-                      images: Optional[List[np.ndarray]] = None, 
-                      labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
-        ...
-
-
+    def add_embedding(self, tag: str, embeddings: np.ndarray, step: int, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None: ...
 
 
 class OutputArtifact(TypedDict, total=False):
     link: Required[str]
-    
+
 
 # The following will be allowed in Python 3.13
 # MethodSpecPresetApplyCondition = TypedDict("MethodSpecPresetApplyCondition", {
@@ -655,9 +607,9 @@ ImplementationStatus = Literal["working", "reproducing", "not-working", "working
 class MethodSpec(TypedDict, total=False):
     id: Required[str]
     method_class: Required[str]
-    conda: NotRequired['CondaBackendSpec']
-    docker: NotRequired['DockerBackendSpec']
-    apptainer: NotRequired['ApptainerBackendSpec']
+    conda: NotRequired["CondaBackendSpec"]
+    docker: NotRequired["DockerBackendSpec"]
+    apptainer: NotRequired["ApptainerBackendSpec"]
     metadata: Dict[str, Any]
     backends_order: List[BackendName]
     presets: Dict[str, Dict[str, Any]]

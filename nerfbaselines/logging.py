@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 def _flatten_simplify_hparams(hparams: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
     flat = {}
+
     def simplify(v):
         if isinstance(v, (tuple, list)):
             chars = "()" if isinstance(v, tuple) else "[]"
@@ -44,29 +45,33 @@ def _flatten_simplify_hparams(hparams: Dict[str, Any], prefix: str = "") -> Dict
             flat[k] = v
     return flat
 
+
 class BaseLoggerEvent(LoggerEvent):
     def add_scalar(self, tag: str, value: Union[float, int]) -> None:
         raise NotImplementedError()
-    
+
     def add_text(self, tag: str, text: str) -> None:
         raise NotImplementedError()
-    
+
     def add_image(self, tag: str, image: np.ndarray, display_name: Optional[str] = None, description: Optional[str] = None, **kwargs) -> None:
         raise NotImplementedError()
-    
-    def add_embedding(self, tag: str, embeddings: np.ndarray, *,
-                        images: Optional[List[np.ndarray]] = None, 
-                        labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
+
+    def add_embedding(self, tag: str, embeddings: np.ndarray, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
         raise NotImplementedError()
-    
-    def add_plot(self, tag: str, *data: np.ndarray,
-                 axes_labels: Optional[Sequence[str]] = None, 
-                 title: Optional[str] = None,
-                 colors: Optional[Sequence[np.ndarray]] = None,
-                 labels: Optional[Sequence[str]] = None,
-                 **kwargs) -> None:
+
+    def add_plot(
+        self,
+        tag: str,
+        *data: np.ndarray,
+        axes_labels: Optional[Sequence[str]] = None,
+        title: Optional[str] = None,
+        colors: Optional[Sequence[np.ndarray]] = None,
+        labels: Optional[Sequence[str]] = None,
+        **kwargs,
+    ) -> None:
         assert len(data) > 0, "At least one data array should be provided"
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -84,7 +89,7 @@ class BaseLoggerEvent(LoggerEvent):
             assert len(colors) == len(data), "Number of colors should match number of data arrays"
             assert all(c.shape == (3,) for c in colors), "All colors should be RGB"
             colors_mpl = [tuple((c / 255).tolist()) for c in colors]
-        
+
         if labels is not None:
             assert len(labels) == len(data), "Number of labels should match number of data arrays"
 
@@ -104,7 +109,7 @@ class BaseLoggerEvent(LoggerEvent):
         # Render plot as np array
         fig.canvas.draw()
         with io.BytesIO() as img_buf:
-            fig.savefig(img_buf, format='png')
+            fig.savefig(img_buf, format="png")
             img_buf.seek(0)
             plot_img = np.array(Image.open(img_buf))
         plt.close(fig)
@@ -127,9 +132,7 @@ class BaseLogger(Logger):
         with self.add_event(step) as event:
             event.add_image(tag, image, display_name, description, **kwargs)
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, step: int, *, 
-                      images: Optional[List[np.ndarray]] = None, 
-                      labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
+    def add_embedding(self, tag: str, embeddings: np.ndarray, step: int, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
         with self.add_event(step) as event:
             event.add_embedding(tag, embeddings, images=images, labels=labels)
 
@@ -149,19 +152,20 @@ class WandbLoggerEvent(BaseLoggerEvent):
 
     def add_image(self, tag: str, image: np.ndarray, display_name: Optional[str] = None, description: Optional[str] = None, **kwargs) -> None:
         import wandb
+
         self._commit[tag] = [wandb.Image(image, caption=description)]
 
     def add_histogram(self, tag: str, values: np.ndarray, *, num_bins: Optional[int] = None) -> None:
         import wandb
+
         if num_bins is not None:
             self._commit[tag] = wandb.Histogram(cast(Any, values), num_bins=num_bins)
         else:
             self._commit[tag] = wandb.Histogram(cast(Any, values))
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, *, 
-                      images: Optional[List[np.ndarray]] = None, 
-                      labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
+    def add_embedding(self, tag: str, embeddings: np.ndarray, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
         import wandb
+
         table = wandb.Table([])
         table.add_column("embedding", embeddings)
         if labels is not None:
@@ -174,11 +178,16 @@ class WandbLoggerEvent(BaseLoggerEvent):
             table.add_column("image", [wandb.Image(image) for image in images])
         self._commit[tag] = table
 
-    def add_plot(self, tag: str, *data: np.ndarray, 
-                 axes_labels: Optional[Sequence[str]] = None, 
-                 title: Optional[str] = None, 
-                 colors: Optional[Sequence[np.ndarray]] = None, 
-                 labels: Optional[Sequence[str]] = None, **kwargs) -> None:
+    def add_plot(
+        self,
+        tag: str,
+        *data: np.ndarray,
+        axes_labels: Optional[Sequence[str]] = None,
+        title: Optional[str] = None,
+        colors: Optional[Sequence[np.ndarray]] = None,
+        labels: Optional[Sequence[str]] = None,
+        **kwargs,
+    ) -> None:
         if len(data) == 0 or data[0].shape[-1] != 2 or colors is not None:
             # Not supported by WandbLogger
             return super().add_plot(tag, *data, axes_labels=axes_labels, title=title, colors=colors, labels=labels, **kwargs)
@@ -205,7 +214,7 @@ class WandbLoggerEvent(BaseLoggerEvent):
                 title=title or tag,
                 xname=xlabel,
             )
-    
+
 
 class WandbLogger(BaseLogger):
     def __init__(self, output: Union[str, Path], **kwargs):
@@ -214,12 +223,12 @@ class WandbLogger(BaseLogger):
             from typing import Literal
         except ImportError:
             from typing_extensions import Literal
+
             typing.Literal = Literal  # type: ignore
-                    
+
         import wandb
-        wandb_run: "wandb.sdk.wandb_run.Run" = typing.cast(
-            "wandb.sdk.wandb_run.Run", 
-            wandb.init(dir=str(output), **kwargs))
+
+        wandb_run: "wandb.sdk.wandb_run.Run" = typing.cast("wandb.sdk.wandb_run.Run", wandb.init(dir=str(output), **kwargs))
         self._wandb_run = wandb_run
         self._wandb = wandb
 
@@ -250,9 +259,11 @@ class ConcatLoggerEvent(_ConcatLoggerEventBase):
         callbacks = []
         for event in self.events:
             callbacks.append(getattr(event, name))
+
         def call(*args, **kwargs):
             for callback in callbacks:
                 callback(*args, **kwargs)
+
         return call
 
 
@@ -271,6 +282,7 @@ class ConcatLogger(BaseLogger):
                     yield from enter_event(loggers[1:], [event] + events)
             else:
                 yield ConcatLoggerEvent(events)  # type: ignore
+
         yield from enter_event(self.loggers, [])
 
     def add_hparams(self, hparams: Dict[str, Any], **kwargs):
@@ -364,9 +376,7 @@ class TensorboardLoggerEvent(BaseLoggerEvent):
         assert isinstance(value, (float, int))
         self._summaries.append(Summary.Value(tag=tag, simple_value=value))  # type: ignore
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, *, 
-                      images: Optional[List[np.ndarray]] = None, 
-                      labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
+    def add_embedding(self, tag: str, embeddings: np.ndarray, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None:
         from tensorboard.plugins.projector.projector_config_pb2 import ProjectorConfig
         from tensorboard.plugins.projector.projector_config_pb2 import EmbeddingInfo
         from tensorboard.compat import tf
@@ -431,14 +441,10 @@ class TensorboardLoggerEvent(BaseLoggerEvent):
 
         label_img_size = None
         if images is not None:
-            assert (
-                len(images) == embeddings.shape[0]
-            ), "#images should equal with #data points"
+            assert len(images) == embeddings.shape[0], "#images should equal with #data points"
             label_img_size = make_sprite(images, save_path)
 
-        assert (
-            embeddings.ndim == 2
-        ), "mat should be 2D, where mat.size(0) is the number of data points"
+        assert embeddings.ndim == 2, "mat should be 2D, where mat.size(0) is the number of data points"
         with (save_path / "tensors.tsv").open("wb") as f:
             for x in embeddings:
                 x = [str(i.item()) for i in x]
@@ -464,12 +470,7 @@ class TensorboardLoggerEvent(BaseLoggerEvent):
         with (Path(self._logdir) / "projector_config.pbtxt").open("wb") as f:
             f.write(tf.compat.as_bytes(config_pbtxt))
 
-
-    def add_histogram(self,
-                      tag: str,
-                      values: np.ndarray,
-                      *,
-                      num_bins: Optional[int] = None):
+    def add_histogram(self, tag: str, values: np.ndarray, *, num_bins: Optional[int] = None):
         """Add histogram to summary.
 
         Args:
@@ -516,9 +517,7 @@ class TensorboardLoggerEvent(BaseLoggerEvent):
             # included, we include an empty bin left.
             # If start == 0, we need to add an empty one left, otherwise we can just include the bin left to the
             # first nonzero-count bin:
-            counts = (
-                counts[start - 1 : end] if start > 0 else np.concatenate([[0], counts[:end]])
-            )
+            counts = counts[start - 1 : end] if start > 0 else np.concatenate([[0], counts[:end]])
             limits = limits[start : end + 1]
 
             if counts.size == 0 or limits.size == 0:
@@ -540,14 +539,14 @@ class TensorboardLoggerEvent(BaseLoggerEvent):
 
 
 def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_discrete=None):
-    from tensorboard.plugins.hparams.api_pb2 import ( # type: ignore
+    from tensorboard.plugins.hparams.api_pb2 import (  # type: ignore
         DataType,
         Experiment,
-        HParamInfo, # type: ignore
+        HParamInfo,  # type: ignore
         MetricInfo,
         MetricName,
         Status,
-    ) # type: ignore
+    )  # type: ignore
     from tensorboard.plugins.hparams.metadata import (
         EXPERIMENT_TAG,
         PLUGIN_DATA_VERSION,
@@ -569,14 +568,8 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
     hparam_dict = hparam_dict or {}
     hparam_domain_discrete = hparam_domain_discrete or {}
     for k, v in hparam_domain_discrete.items():
-        if (
-            k not in hparam_dict
-            or not isinstance(v, list)
-            or not all(isinstance(d, type(hparam_dict[k])) for d in v)
-        ):
-            raise TypeError(
-                f"parameter: hparam_domain_discrete[{k}] should be a list of same type as hparam_dict[{k}]."
-            )
+        if k not in hparam_dict or not isinstance(v, list) or not all(isinstance(d, type(hparam_dict[k])) for d in v):
+            raise TypeError(f"parameter: hparam_domain_discrete[{k}] should be a list of same type as hparam_dict[{k}].")
     hps = []
 
     ssi: Any = SessionStartInfo()
@@ -587,12 +580,7 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
             ssi.hparams[k].number_value = v
 
             if k in hparam_domain_discrete:
-                domain_discrete: Optional[struct_pb2.ListValue] = struct_pb2.ListValue(
-                    values=[
-                        struct_pb2.Value(number_value=d)
-                        for d in hparam_domain_discrete[k]
-                    ]
-                )
+                domain_discrete: Optional[struct_pb2.ListValue] = struct_pb2.ListValue(values=[struct_pb2.Value(number_value=d) for d in hparam_domain_discrete[k]])
             else:
                 domain_discrete = None
 
@@ -609,12 +597,7 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
             ssi.hparams[k].string_value = v
 
             if k in hparam_domain_discrete:
-                domain_discrete = struct_pb2.ListValue(
-                    values=[
-                        struct_pb2.Value(string_value=d)
-                        for d in hparam_domain_discrete[k]
-                    ]
-                )
+                domain_discrete = struct_pb2.ListValue(values=[struct_pb2.Value(string_value=d) for d in hparam_domain_discrete[k]])
             else:
                 domain_discrete = None
 
@@ -632,10 +615,7 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
 
             if k in hparam_domain_discrete:
                 domain_discrete = struct_pb2.ListValue(  # type: ignore
-                    values=[
-                        struct_pb2.Value(bool_value=d)  # type: ignore
-                        for d in hparam_domain_discrete[k]
-                    ]
+                    values=[struct_pb2.Value(bool_value=d) for d in hparam_domain_discrete[k]]  # type: ignore
                 )
             else:
                 domain_discrete = None
@@ -653,9 +633,7 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
             ssi.hparams[k].number_value = v.item()
             hps.append(HParamInfo(name=k, type=DataType.Value("DATA_TYPE_FLOAT64")))  # type: ignore
             continue
-        raise ValueError(
-            "value should be one of int, float, str, bool, or np.ndarray"
-        )
+        raise ValueError("value should be one of int, float, str, bool, or np.ndarray")
 
     content = HParamsPluginData(session_start_info=ssi, version=PLUGIN_DATA_VERSION)  # type: ignore
     smd = SummaryMetadata(
@@ -690,11 +668,9 @@ def _tensorboard_hparams(hparam_dict=None, metrics_list=None, hparam_domain_disc
 
 
 class TensorboardLogger(BaseLogger):
-    def __init__(self, 
-                 output: Union[str, Path], 
-                 hparam_plugin_metrics: Optional[Sequence[str]] = None,
-                 subdirectory: Optional[str] = "tensorboard"):
+    def __init__(self, output: Union[str, Path], hparam_plugin_metrics: Optional[Sequence[str]] = None, subdirectory: Optional[str] = "tensorboard"):
         from tensorboard.summary.writer.event_file_writer import EventFileWriter
+
         output = str(output)
         if subdirectory is not None:
             output = os.path.join(output, subdirectory)
@@ -711,12 +687,13 @@ class TensorboardLogger(BaseLogger):
         summaries = []
         yield TensorboardLoggerEvent(self._writer.get_logdir(), summaries, step=step)
         summary = Summary(value=summaries)  # type: ignore
-                
-        event = Event(summary=summary, step=step, wall_time=time.time()) # type: ignore
+
+        event = Event(summary=summary, step=step, wall_time=time.time())  # type: ignore
         self._writer.add_event(event)
 
     def add_hparams(self, hparams: Dict[str, Any]):
         from tensorboard.compat.proto.event_pb2 import Event
+
         if not isinstance(hparams, dict):
             raise TypeError("hparam should be dictionary.")
         hparam_domain_discrete = {}
@@ -743,14 +720,12 @@ def log_metrics(logger: Logger, metrics, *, prefix: str = "", step: int):
 
 
 def read_tensorboard_metrics(path, *, metrics=None):
-    from tensorboard.backend.event_processing.event_accumulator import (
-        AUDIO, COMPRESSED_HISTOGRAMS, HISTOGRAMS, IMAGES, SCALARS,
-        TENSORS, EventAccumulator)
+    from tensorboard.backend.event_processing.event_accumulator import AUDIO, COMPRESSED_HISTOGRAMS, HISTOGRAMS, IMAGES, SCALARS, TENSORS, EventAccumulator
+
     data = {}
     if os.path.isdir(path):
         for filename in sorted(os.listdir(path)):
-            sub_data = read_tensorboard_metrics(
-                os.path.join(path, filename), metrics=metrics)
+            sub_data = read_tensorboard_metrics(os.path.join(path, filename), metrics=metrics)
             for k, (xs2, ys2) in sub_data.items():
                 xs, ys = data.setdefault(k, ([], []))
                 xs.extend(xs2)
@@ -783,7 +758,7 @@ def subsample_metrics(metrics, num_samples=100):
     x, y = metrics
     if len(x) <= num_samples:
         return metrics
-    indices = [int(round(i/(num_samples-1)*(len(x)-1))) for i in range(num_samples)]
+    indices = [int(round(i / (num_samples - 1) * (len(x) - 1))) for i in range(num_samples)]
     xn = [x[i] for i in indices]
     yn = [y[i] for i in indices]
     return xn, yn

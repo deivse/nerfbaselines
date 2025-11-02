@@ -17,31 +17,34 @@ import numpy as np
 from PIL import Image
 import nerfbaselines
 from . import (
-    Method, 
+    Method,
     MethodSpec,
-    EvaluationProtocol, 
-    __version__, 
+    EvaluationProtocol,
+    __version__,
     Dataset,
 )
 from .backends import run_on_host
 from .io import (
-    deserialize_nb_info, 
-    serialize_nb_info, 
+    deserialize_nb_info,
+    serialize_nb_info,
     save_output_artifact,
     new_nb_info,
 )
 from ._registry import loggers_registry
 from .utils import (
-    Indices, 
-    image_to_srgb, 
+    Indices,
+    image_to_srgb,
     visualize_depth,
     convert_image_dtype,
 )
 from .datasets import dataset_index_select
 from .evaluation import (
-    render_all_images, evaluate, build_evaluation_protocol,
+    render_all_images,
+    evaluate,
+    build_evaluation_protocol,
 )
 from .logging import ConcatLogger, Logger, log_metrics
+
 try:
     from typing import Literal, TypedDict
 except ImportError:
@@ -71,25 +74,20 @@ def get_resources_utilization_info(pid: Optional[int] = None) -> ResourcesUtiliz
     current_platform = platform.system()
 
     if current_platform == "Windows":  # Windows
+
         def get_memory_usage_windows(pid: int) -> int:
             try:
-                process = subprocess.Popen(
-                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                    stdout=subprocess.PIPE,
-                    text=True
-                )
+                process = subprocess.Popen(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], stdout=subprocess.PIPE, text=True)
                 out, _ = process.communicate()
-                mem_usage_str = out.strip().split(',')[4].strip('"').replace(' K', '').replace(',', '')
+                mem_usage_str = out.strip().split(",")[4].strip('"').replace(" K", "").replace(",", "")
                 return int(mem_usage_str) * 1024  # Convert KB to bytes
             except Exception:
                 return 0
+
         try:
             mem = get_memory_usage_windows(pid)
             all_processes = set((pid,))
-            out = subprocess.check_output(
-                ["wmic", "process", "where", f"(ParentProcessId={pid})", "get", "ProcessId"],
-                text=True
-            )
+            out = subprocess.check_output(["wmic", "process", "where", f"(ParentProcessId={pid})", "get", "ProcessId"], text=True)
             children_pids = [int(line.strip()) for line in out.strip().split() if line.strip().isdigit()]
             for child_pid in children_pids:
                 mem += get_memory_usage_windows(child_pid)
@@ -167,10 +165,7 @@ def _get_config_overrides_from_presets(spec: MethodSpec, presets: Union[Set[str]
     for preset_name, preset in spec.get("presets", {}).items():
         if preset_name not in _presets:
             continue
-        _config_overrides.update({
-            k: v for k, v in preset.items()
-            if not k.startswith("@")
-        })
+        _config_overrides.update({k: v for k, v in preset.items() if not k.startswith("@")})
     return _config_overrides
 
 
@@ -254,8 +249,7 @@ def make_image_grid(*images: np.ndarray, ncol=None, padding=2, max_width=1920, b
         h, w = image.shape[:2]
         offx = x * (width + padding) + (width - w) // 2
         offy = y * (height + padding) + (height - h) // 2
-        grid[offy : offy + h, 
-             offx : offx + w] = image
+        grid[offy : offy + h, offx : offx + w] = image
     return grid
 
 
@@ -295,10 +289,8 @@ class MetricsAccumulator:
         return state
 
 
-
-
 def eval_few(method: Method, logger: Logger, dataset: Dataset, *, split: str, step, evaluation_protocol: EvaluationProtocol):
-    rand_number, = struct.unpack("<Q", hashlib.sha1(str(step).encode("utf8")).digest()[:8])
+    (rand_number,) = struct.unpack("<Q", hashlib.sha1(str(step).encode("utf8")).digest()[:8])
 
     idx = rand_number % len(dataset["image_paths"])
     dataset_slice = dataset_index_select(dataset, [idx])
@@ -434,11 +426,7 @@ def eval_all(method: Method, logger: Optional[Logger], dataset: Dataset, *, outp
     elapsed = time.perf_counter() - start
 
     # Compute metrics
-    info = evaluate(
-        output, 
-        output_metrics, 
-        evaluation_protocol=evaluation_protocol,
-        description=f"evaluating all images at step={step}")
+    info = evaluate(output, output_metrics, evaluation_protocol=evaluation_protocol, description=f"evaluating all images at step={step}")
     metrics = info["metrics"]
 
     if logger:
@@ -456,11 +444,7 @@ def eval_all(method: Method, logger: Optional[Logger], dataset: Dataset, *, outp
             make_image_grid(*[x[1] for x in vis_images], ncol=num_cols),
         )
 
-        logger.add_image(f"eval-all-{split}/color", 
-                         color_vis, 
-                         display_name="color", 
-                         description="left: gt, right: prediction", 
-                         step=step)
+        logger.add_image(f"eval-all-{split}/color", color_vis, display_name="color", description="left: gt, right: prediction", step=step)
     return metrics
 
 
@@ -492,11 +476,13 @@ def build_logger(loggers: FrozenSet[str]) -> Callable[[str], Logger]:
             _loggers.append(logger_cls(output))
         logging.info("Initialized loggers: " + ",".join(loggers))
         return ConcatLogger(_loggers)
+
     return build
 
 
 def _is_tensorboard_enabled(logger: Logger, output: str) -> bool:
     from nerfbaselines.logging import TensorboardLogger, ConcatLogger
+
     if isinstance(logger, TensorboardLogger):
         if os.path.abspath(logger._output) == os.path.abspath(output):
             return True
@@ -558,7 +544,6 @@ class Trainer:
         self.model_info = self.method.get_info()
         self.test_dataset: Optional[Dataset] = test_dataset
 
-        
         self.step = self.model_info.get("loaded_step") or 0
         if self.num_iterations is None:
             raise RuntimeError(f"Method {self.model_info['method_id']} must specify the default number of iterations")
@@ -582,10 +567,12 @@ class Trainer:
         self._total_train_time = 0
         self._resources_utilization_info = None
         self._train_dataset_for_eval = None
-        self._acc_metrics = MetricsAccumulator({
-            "total-train-time": "last",
-            "learning-rate": "last",
-        })
+        self._acc_metrics = MetricsAccumulator(
+            {
+                "total-train-time": "last",
+                "learning-rate": "last",
+            }
+        )
 
         # Update schedules
         self.num_iterations = self.model_info["num_iterations"]
@@ -639,12 +626,8 @@ class Trainer:
             if test_background_color is not None:
                 assert isinstance(test_background_color, np.ndarray), "Dataset's background_color must be a numpy array"
             if not (
-                (test_background_color is None and dataset_background_color is None) or 
-                (
-                    test_background_color is not None and 
-                    dataset_background_color is not None and
-                    np.array_equal(test_background_color, dataset_background_color)
-                )
+                (test_background_color is None and dataset_background_color is None)
+                or (test_background_color is not None and dataset_background_color is not None and np.array_equal(test_background_color, dataset_background_color))
             ):
                 raise RuntimeError(f"train dataset color space {dataset_background_color} != test dataset color space {test_dataset['metadata'].get('background_color')}")
 
@@ -719,7 +702,9 @@ class Trainer:
             # After the loggers are initialized, we perform one last check for the output artifacts
             if self.generate_output_artifact is None or self.generate_output_artifact:
                 if not _is_tensorboard_enabled(self._logger, os.path.join(self.output, "tensorboard")):
-                    logging.error("Add tensorboard logger in order to produce output artifact. Please add `--vis tensorboard` to the command line arguments. Or disable output artifact generation with `--no-output-artifact`")
+                    logging.error(
+                        "Add tensorboard logger in order to produce output artifact. Please add `--vis tensorboard` to the command line arguments. Or disable output artifact generation with `--no-output-artifact`"
+                    )
                     if self.generate_output_artifact is None:
                         self.generate_output_artifact = False
                     else:
@@ -797,8 +782,7 @@ class Trainer:
 
         # We can print the results because the evaluation was run for the last step
         if final_metrics is not None:
-            logging.info("Final evaluation results:\n" + 
-                         "\n".join(f"   {k.replace('_','-')}: {v:.4f}" for k, v in final_metrics.items()))
+            logging.info("Final evaluation results:\n" + "\n".join(f"   {k.replace('_','-')}: {v:.4f}" for k, v in final_metrics.items()))
 
         # Save if not saved by default
         if self.step not in self.save_iters:
@@ -821,21 +805,19 @@ class Trainer:
             return
         logger = self.get_logger()
         nb_info = self._get_nb_info()
-        return eval_all(self.method, logger, self.test_dataset, 
-                        step=self.step, evaluation_protocol=self._evaluation_protocol,
-                        split="test", nb_info=nb_info, output=self.output)
+        return eval_all(self.method, logger, self.test_dataset, step=self.step, evaluation_protocol=self._evaluation_protocol, split="test", nb_info=nb_info, output=self.output)
 
     def eval_few(self):
         logger = self.get_logger()
 
         assert self._train_dataset_for_eval is not None, "train_dataset_for_eval must be set"
-        rand_number, = struct.unpack("<Q", hashlib.sha1(str(self.step).encode("utf8")).digest()[:8])
+        (rand_number,) = struct.unpack("<Q", hashlib.sha1(str(self.step).encode("utf8")).digest()[:8])
 
         idx = rand_number % len(self._train_dataset_for_eval["image_paths"])
         dataset_slice = dataset_index_select(self._train_dataset_for_eval, slice(idx, idx + 1))
 
         eval_few(self.method, logger, dataset_slice, split="train", step=self.step, evaluation_protocol=self._evaluation_protocol)
-        
+
         if self.test_dataset is None:
             logging.warning("Skipping eval_few on test dataset - no eval dataset")
             return

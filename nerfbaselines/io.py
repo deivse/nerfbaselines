@@ -11,8 +11,17 @@ import time
 import tarfile
 import os
 from typing import (
-    Union, Iterator, Any, Dict, List, Iterable, Optional, TypeVar, overload,
-    ContextManager, IO
+    Union,
+    Iterator,
+    Any,
+    Dict,
+    List,
+    Iterable,
+    Optional,
+    TypeVar,
+    overload,
+    ContextManager,
+    IO,
 )
 import zipfile
 import contextlib
@@ -23,7 +32,7 @@ import shutil
 from tqdm import tqdm
 import urllib.request
 from . import (
-    Trajectory, 
+    Trajectory,
     Method,
     Dataset,
     RenderOutput,
@@ -33,6 +42,7 @@ from .utils import (
     visualize_depth,
     image_to_srgb,
 )
+
 try:
     from typing import Literal
 except ImportError:
@@ -50,22 +60,28 @@ def _assert_not_none(value: Optional[T]) -> T:
 
 
 @overload
-def wget(url: str, output: Literal[None] = None, *, desc: Optional[str] = ...) -> ContextManager[IO[bytes]]:
-    ...
+def wget(url: str, output: Literal[None] = None, *, desc: Optional[str] = ...) -> ContextManager[IO[bytes]]: ...
+
 
 @overload
-def wget(url: str, output: Union[str, Path, IO[bytes]], *, desc: Optional[str] = ...) -> None:
-    ...
+def wget(url: str, output: Union[str, Path, IO[bytes]], *, desc: Optional[str] = ...) -> None: ...
 
 
-def wget(url: str, output: Union[str, Path, None, IO[bytes]] = None, *, desc: Optional[str] = None) -> Union[ContextManager[IO[bytes]], None]:
+def wget(
+    url: str,
+    output: Union[str, Path, None, IO[bytes]] = None,
+    *,
+    desc: Optional[str] = None,
+) -> Union[ContextManager[IO[bytes]], None]:
     if output is None:
+
         @contextlib.contextmanager
         def _wget():
             with io.BytesIO() as f:
                 wget(url, f, desc=desc)
                 f.seek(0)
                 yield f
+
         return _wget()
 
     if isinstance(output, (str, Path)):
@@ -75,11 +91,14 @@ def wget(url: str, output: Union[str, Path, None, IO[bytes]] = None, *, desc: Op
         return
 
     with contextlib.ExitStack() as stack:
-        request = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept-Encoding": "gzip",
-            "Accept": "*/*",
-        })
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept-Encoding": "gzip",
+                "Accept": "*/*",
+            },
+        )
         response = stack.enter_context(urllib.request.urlopen(request))
         if response.getcode() != 200:
             raise RuntimeError(f"Failed to download {url}.")
@@ -87,9 +106,17 @@ def wget(url: str, output: Union[str, Path, None, IO[bytes]] = None, *, desc: Op
         block_size = 1024 * 32
         rfile = response
         if desc is not None:
-            rfile = stack.enter_context(tqdm.wrapattr(
-                rfile, "read", total=total_size_in_bytes,
-                unit="iB", unit_scale=True, desc=desc, dynamic_ncols=True))
+            rfile = stack.enter_context(
+                tqdm.wrapattr(
+                    rfile,
+                    "read",
+                    total=total_size_in_bytes,
+                    unit="iB",
+                    unit_scale=True,
+                    desc=desc,
+                    dynamic_ncols=True,
+                )
+            )
         decompressor = None
         if response.getheader("Content-Encoding", "") == "gzip":
             decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
@@ -107,9 +134,7 @@ def wget(url: str, output: Union[str, Path, None, IO[bytes]] = None, *, desc: Op
 
 
 @contextlib.contextmanager
-def open_any(
-    path: Union[str, Path, IO[bytes]], mode: OpenMode = "r"
-) -> Iterator[IO[bytes]]:
+def open_any(path: Union[str, Path, IO[bytes]], mode: OpenMode = "r") -> Iterator[IO[bytes]]:
     if not isinstance(path, (str, Path)):
         yield path
         return
@@ -143,9 +168,7 @@ def open_any(
 
             else:
                 # Extract from zip
-                with zipfile.ZipFile(f, mode=mode) as zip, zip.open(
-                    "/".join(components[zip_parts[-1] + 1 :]), mode=mode
-                ) as f:
+                with zipfile.ZipFile(f, mode=mode) as zip, zip.open("/".join(components[zip_parts[-1] + 1 :]), mode=mode) as f:
                     yield f
         return
 
@@ -174,15 +197,9 @@ def open_any_directory(path: Union[str, Path], mode: OpenMode = "r") -> Iterator
         path = os.path.abspath(path)
 
     components = path.split(os.path.sep)
-    compressed_parts = [
-        i
-        for i, c in enumerate(components)
-        if c.endswith(".zip") or c.endswith(".tar.gz")
-    ]
+    compressed_parts = [i for i, c in enumerate(components) if c.endswith(".zip") or c.endswith(".tar.gz")]
     if compressed_parts:
-        with open_any(
-            os.path.sep.join(components[: compressed_parts[-1] + 1]), mode=mode
-        ) as f, tempfile.TemporaryDirectory() as tmpdir:
+        with open_any(os.path.sep.join(components[: compressed_parts[-1] + 1]), mode=mode) as f, tempfile.TemporaryDirectory() as tmpdir:
             rest = "/".join(components[compressed_parts[-1] + 1 :])
             if components[compressed_parts[-1]].endswith(".tar.gz"):
                 with tarfile.open(fileobj=f, mode=mode + ":gz") as tar:
@@ -191,9 +208,7 @@ def open_any_directory(path: Union[str, Path], mode: OpenMode = "r") -> Iterator
                             if not member.name.startswith(rest):
                                 continue
                             if member.isdir():
-                                os.makedirs(
-                                    os.path.join(tmpdir, member.name), exist_ok=True
-                                )
+                                os.makedirs(os.path.join(tmpdir, member.name), exist_ok=True)
                             else:
                                 tar.extract(member, tmpdir)
                         yield os.path.join(tmpdir, rest.replace("/", os.path.sep))
@@ -206,16 +221,12 @@ def open_any_directory(path: Union[str, Path], mode: OpenMode = "r") -> Iterator
                             for dir in dirs:
                                 tar.add(
                                     os.path.join(root, dir),
-                                    arcname=os.path.relpath(
-                                        os.path.join(root, dir), tmp_path
-                                    ),
+                                    arcname=os.path.relpath(os.path.join(root, dir), tmp_path),
                                 )
                             for file in files:
                                 tar.add(
                                     os.path.join(root, file),
-                                    arcname=os.path.relpath(
-                                        os.path.join(root, file), tmp_path
-                                    ),
+                                    arcname=os.path.relpath(os.path.join(root, file), tmp_path),
                                 )
                     else:
                         raise RuntimeError(f"Unsupported mode {mode} for tar.gz files.")
@@ -227,9 +238,7 @@ def open_any_directory(path: Union[str, Path], mode: OpenMode = "r") -> Iterator
                             if not member.filename.startswith(rest):
                                 continue
                             if member.is_dir():
-                                os.makedirs(
-                                    os.path.join(tmpdir, member.filename), exist_ok=True
-                                )
+                                os.makedirs(os.path.join(tmpdir, member.filename), exist_ok=True)
                             else:
                                 zip.extract(member, tmpdir)
                                 # Fix mtime
@@ -248,25 +257,19 @@ def open_any_directory(path: Union[str, Path], mode: OpenMode = "r") -> Iterator
                             for dir in dirs:
                                 zip.write(
                                     os.path.join(root, dir),
-                                    arcname=os.path.relpath(
-                                        os.path.join(root, dir), tmp_path
-                                    ),
+                                    arcname=os.path.relpath(os.path.join(root, dir), tmp_path),
                                 )
                             for file in files:
                                 zip.write(
                                     os.path.join(root, file),
-                                    arcname=os.path.relpath(
-                                        os.path.join(root, file), tmp_path
-                                    ),
+                                    arcname=os.path.relpath(os.path.join(root, file), tmp_path),
                                 )
                     else:
                         raise RuntimeError(f"Unsupported mode {mode} for zip files.")
         return
 
     if path.startswith("http://") or path.startswith("https://"):
-        raise RuntimeError(
-            "Only tar.gz and zip files are supported for remote directories."
-        )
+        raise RuntimeError("Only tar.gz and zip files are supported for remote directories.")
 
     # Normal file
     Path(path).mkdir(parents=True, exist_ok=True)
@@ -306,12 +309,14 @@ def serialize_nb_info(info: dict) -> dict:
             return [ts(v) for v in x]
         else:
             return x
+
     ts(info)
     return info
 
 
 def deserialize_nb_info(info: dict) -> dict:
     info = info.copy()
+
     def fix_dm(dm):
         if dm is None:
             return None
@@ -332,6 +337,7 @@ def deserialize_nb_info(info: dict) -> dict:
                 viewer_transform = viewer_transform[:3]
             dm["viewer_transform"] = viewer_transform.reshape(3, 4)
         return dm
+
     if "dataset_metadata" in info:
         info["dataset_metadata"] = fix_dm(info["dataset_metadata"])
     if "render_dataset_metadata" in info:
@@ -339,13 +345,15 @@ def deserialize_nb_info(info: dict) -> dict:
     return info
 
 
-def new_nb_info(train_dataset_metadata, 
-                method: Method, 
-                config_overrides, 
-                evaluation_protocol=None,
-                resources_utilization_info=None,
-                total_train_time=None,
-                applied_presets=None):
+def new_nb_info(
+    train_dataset_metadata,
+    method: Method,
+    config_overrides,
+    evaluation_protocol=None,
+    resources_utilization_info=None,
+    total_train_time=None,
+    applied_presets=None,
+):
     dataset_metadata = train_dataset_metadata.copy()
     model_info = method.get_info()
 
@@ -366,7 +374,6 @@ def new_nb_info(train_dataset_metadata,
         "applied_presets": tuple(sorted(applied_presets)) if applied_presets is not None else None,
         "dataset_metadata": dataset_metadata,
         "evaluation_protocol": evaluation_protocol,
-
         # Store hparams
         "hparams": method.get_info().get("hparams"),
     }
@@ -401,7 +408,7 @@ def load_trajectory(file) -> Trajectory:
     data = json.load(file)
     if data.pop("format", None) != "nerfbaselines-v1":
         raise RuntimeError("Trajectory format is not supported")
-    
+
     # Fix np arrays
     def _fix_appearance(appearance):
         if not appearance:
@@ -518,14 +525,14 @@ def get_method_sha(method: Method) -> str:
         return get_checkpoint_sha(tmpdir)
 
 
-
-
-def serialize_evaluation_results(metrics: Dict, 
-                                 metrics_lists, 
-                                 predictions_sha: str,
-                                 ground_truth_sha: str,
-                                 evaluation_protocol: str, 
-                                 nb_info: Dict):
+def serialize_evaluation_results(
+    metrics: Dict,
+    metrics_lists,
+    predictions_sha: str,
+    ground_truth_sha: str,
+    evaluation_protocol: str,
+    nb_info: Dict,
+):
     precision = 5
     nb_info = serialize_nb_info(nb_info)
     out = {}
@@ -538,41 +545,60 @@ def serialize_evaluation_results(metrics: Dict,
     render_dataset_metadata = nb_info.pop("render_dataset_metadata", None)
     if render_dataset_metadata is not None:
         out["render_dataset_metadata"] = render_dataset_metadata
-    out.update({
-        "nb_info": nb_info,
-        "evaluate_datetime": datetime.utcnow().isoformat(timespec="seconds"),
-        "evaluate_version": __version__,
-        "metrics": {k: round(v, precision) for k, v in metrics.items()},
-        "metrics_raw": {k: _encode_values(metrics_lists[k]) for k in metrics_lists},
-        "metrics_sha256": get_metrics_hash(metrics_lists),
-        "predictions_sha256": predictions_sha,
-        "ground_truth_sha256": ground_truth_sha,
-        "evaluation_protocol": evaluation_protocol,
-    })
+    out.update(
+        {
+            "nb_info": nb_info,
+            "evaluate_datetime": datetime.utcnow().isoformat(timespec="seconds"),
+            "evaluate_version": __version__,
+            "metrics": {k: round(v, precision) for k, v in metrics.items()},
+            "metrics_raw": {k: _encode_values(metrics_lists[k]) for k in metrics_lists},
+            "metrics_sha256": get_metrics_hash(metrics_lists),
+            "predictions_sha256": predictions_sha,
+            "ground_truth_sha256": ground_truth_sha,
+            "evaluation_protocol": evaluation_protocol,
+        }
+    )
     return out
 
 
-def save_evaluation_results(file,
-                            metrics: Dict, 
-                            metrics_lists, 
-                            predictions_sha: str,
-                            ground_truth_sha: str,
-                            evaluation_protocol: str, 
-                            nb_info: Dict):
+def save_evaluation_results(
+    file,
+    metrics: Dict,
+    metrics_lists,
+    predictions_sha: str,
+    ground_truth_sha: str,
+    evaluation_protocol: str,
+    nb_info: Dict,
+):
     if isinstance(file, str):
         if os.path.exists(file):
             raise FileExistsError(f"{file} already exists")
         with open(file, "w", encoding="utf8") as f:
-            return save_evaluation_results(f, metrics, metrics_lists, predictions_sha, ground_truth_sha, evaluation_protocol, nb_info)
+            return save_evaluation_results(
+                f,
+                metrics,
+                metrics_lists,
+                predictions_sha,
+                ground_truth_sha,
+                evaluation_protocol,
+                nb_info,
+            )
 
     else:
-        out = serialize_evaluation_results(metrics, metrics_lists, predictions_sha, ground_truth_sha, evaluation_protocol, nb_info)
+        out = serialize_evaluation_results(
+            metrics,
+            metrics_lists,
+            predictions_sha,
+            ground_truth_sha,
+            evaluation_protocol,
+            nb_info,
+        )
         json.dump(out, file, indent=2)
         return out
 
 
 def _save_predictions_iterate(output: str, predictions: Iterable[RenderOutput], dataset: Dataset, *, nb_info=None):
-    background_color =  dataset["metadata"].get("background_color", None)
+    background_color = dataset["metadata"].get("background_color", None)
     assert background_color is None or background_color.dtype == np.uint8, "background_color must be None or uint8"
     color_space = dataset["metadata"].get("color_space", "srgb")
     expected_scene_scale = dataset["metadata"].get("expected_scene_scale")
@@ -594,8 +620,10 @@ def _save_predictions_iterate(output: str, predictions: Iterable[RenderOutput], 
                     tarinfo.size = f.tell()
                     f.seek(0)
                     tar.addfile(tarinfo=tarinfo, fileobj=f)
+
             open_fn = open_fn_tar
         else:
+
             def open_fn_fs(path):
                 path = os.path.join(output, path)
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -605,6 +633,7 @@ def _save_predictions_iterate(output: str, predictions: Iterable[RenderOutput], 
 
         # Write metadata
         from pprint import pprint
+
         pprint(nb_info)
         with open_fn("info.json") as fp:
             _background_color = background_color
@@ -618,15 +647,27 @@ def _save_predictions_iterate(output: str, predictions: Iterable[RenderOutput], 
                             "render_version": __version__,
                             "render_datetime": datetime.utcnow().isoformat(timespec="seconds"),
                             "render_dataset_metadata": dataset["metadata"],
-                        }),
+                        }
+                    ),
                     indent=2,
                 ).encode("utf-8")
             )
 
-
         for i, (pred, (w, h)) in enumerate(zip(predictions, _assert_not_none(dataset["cameras"].image_sizes))):
-            gt_image = image_to_srgb(dataset["images"][i][:h, :w], np.uint8, color_space=color_space, allow_alpha=allow_transparency, background_color=background_color)
-            pred_image = image_to_srgb(pred["color"], np.uint8, color_space=color_space, allow_alpha=allow_transparency, background_color=background_color)
+            gt_image = image_to_srgb(
+                dataset["images"][i][:h, :w],
+                np.uint8,
+                color_space=color_space,
+                allow_alpha=allow_transparency,
+                background_color=background_color,
+            )
+            pred_image = image_to_srgb(
+                pred["color"],
+                np.uint8,
+                color_space=color_space,
+                allow_alpha=allow_transparency,
+                background_color=background_color,
+            )
             assert gt_image.shape[:-1] == pred_image.shape[:-1], f"gt size {gt_image.shape[:-1]} != pred size {pred_image.shape[:-1]}"
             relative_name = Path(dataset["image_paths"][i])
             if dataset["image_paths_root"] is not None:
@@ -649,7 +690,11 @@ def _save_predictions_iterate(output: str, predictions: Iterable[RenderOutput], 
             if "depth" in pred:
                 with open_fn(f"depth/{relative_name.with_suffix('.bin')}") as f:
                     save_depth(f, pred["depth"])
-                depth_rgb = visualize_depth(pred["depth"], near_far=dataset["cameras"].nears_fars[i] if dataset["cameras"].nears_fars is not None else None, expected_scale=expected_scene_scale)
+                depth_rgb = visualize_depth(
+                    pred["depth"],
+                    near_far=dataset["cameras"].nears_fars[i] if dataset["cameras"].nears_fars is not None else None,
+                    expected_scale=expected_scene_scale,
+                )
                 with open_fn(f"depth-rgb/{relative_name.with_suffix('.png')}") as f:
                     save_image(f, depth_rgb)
             if color_space == "linear":
@@ -666,7 +711,14 @@ def save_predictions(output: str, predictions: Iterable[RenderOutput], dataset: 
         pass
 
 
-def save_output_artifact(model_path: Union[str, Path], predictions_path: Union[str, Path], metrics_path: Union[str, Path], tensorboard_path: Union[str, Path], output_path: Union[str, Path], validate: bool = True):
+def save_output_artifact(
+    model_path: Union[str, Path],
+    predictions_path: Union[str, Path],
+    metrics_path: Union[str, Path],
+    tensorboard_path: Union[str, Path],
+    output_path: Union[str, Path],
+    validate: bool = True,
+):
     """Prepares artifacts for upload to the NeRF benchmark.
 
     Args:
@@ -675,6 +727,7 @@ def save_output_artifact(model_path: Union[str, Path], predictions_path: Union[s
         metrics_path: Path to the metrics file.
         tensorboard_path: Path to the tensorboard events file.
     """
+
     def _zip_add_dir(zip: zipfile.ZipFile, dirpath: Path, arcname: Optional[str] = None):
         for name in dirpath.glob("**/*"):
             rel_name = name.relative_to(dirpath)
@@ -759,15 +812,18 @@ def save_output_artifact(model_path: Union[str, Path], predictions_path: Union[s
 
 def save_cameras_npz(file, cameras):
     numpy_arrays = {}
+
     def extract_array(arr, name):
         numpy_arrays[name] = arr
         return arr
+
     cameras.apply(extract_array)
     np.savez(file, **numpy_arrays)
 
 
 def get_torch_checkpoint_sha(checkpoint_data):
     sha = hashlib.sha256()
+
     def update(d):
         if type(d).__name__ == "Tensor":
             sha.update(d.cpu().numpy().tobytes())
@@ -787,6 +843,7 @@ def get_torch_checkpoint_sha(checkpoint_data):
             sha.update("(None)".encode("utf8"))
         else:
             raise ValueError(f"Unsupported type {type(d)}")
+
     update(checkpoint_data)
     return sha.hexdigest()
 
@@ -798,7 +855,12 @@ def save_image(file: Union[IO[bytes], str, Path], tensor: np.ndarray):
     path = Path(file.name)
     if str(path).endswith(".bin"):
         if tensor.shape[2] < 4:
-            tensor = np.dstack((tensor, np.ones([tensor.shape[0], tensor.shape[1], 4 - tensor.shape[2]])))
+            tensor = np.dstack(
+                (
+                    tensor,
+                    np.ones([tensor.shape[0], tensor.shape[1], 4 - tensor.shape[2]]),
+                )
+            )
         file.write(struct.pack("<ii", tensor.shape[0], tensor.shape[1]))
         file.write(tensor.astype(np.float16).tobytes())
     else:

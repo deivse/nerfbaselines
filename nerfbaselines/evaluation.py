@@ -21,13 +21,13 @@ from .utils import (
     apply_colormap,
     image_to_srgb,
     visualize_depth,
-    convert_image_dtype, 
+    convert_image_dtype,
 )
 from .backends import run_on_host, zero_copy
 from . import (
     Dataset,
-    RenderOutput, 
-    EvaluationProtocol, 
+    RenderOutput,
+    EvaluationProtocol,
     Cameras,
     Method,
     Trajectory,
@@ -37,20 +37,21 @@ from . import (
     new_dataset,
 )
 from .io import (
-    open_any_directory, 
-    deserialize_nb_info, 
+    open_any_directory,
+    deserialize_nb_info,
     get_predictions_sha,
     get_method_sha,
     save_evaluation_results,
     _save_predictions_iterate,
     save_image,
-    read_image, 
+    read_image,
     read_mask,
     save_mask,
 )
 from .datasets import dataset_index_select
 from . import metrics
 from . import cameras as _cameras
+
 try:
     from typing import Literal
 except ImportError:
@@ -78,22 +79,19 @@ def _import_type(name: str) -> Any:
     return obj
 
 
-def build_evaluation_protocol(id: str) -> 'EvaluationProtocol':
+def build_evaluation_protocol(id: str) -> "EvaluationProtocol":
     spec = nerfbaselines.get_evaluation_protocol_spec(id)
     if spec is None:
         raise RuntimeError(f"Could not find evaluation protocol {id} in registry. Supported protocols: {','.join(nerfbaselines.get_supported_evaluation_protocols())}")
-    return cast('EvaluationProtocol', _import_type(spec["evaluation_protocol_class"])())
-
-
-
-@typing.overload
-def compute_metrics(pred: np.ndarray, gt: np.ndarray, *, mask=None, reduce: Literal[True] = True, run_lpips_vgg: bool = ...) -> Dict[str, float]:
-    ...
+    return cast("EvaluationProtocol", _import_type(spec["evaluation_protocol_class"])())
 
 
 @typing.overload
-def compute_metrics(pred: np.ndarray, gt: np.ndarray, *, mask=None, reduce: Literal[False], run_lpips_vgg: bool = ...) -> Dict[str, np.ndarray]:
-    ...
+def compute_metrics(pred: np.ndarray, gt: np.ndarray, *, mask=None, reduce: Literal[True] = True, run_lpips_vgg: bool = ...) -> Dict[str, float]: ...
+
+
+@typing.overload
+def compute_metrics(pred: np.ndarray, gt: np.ndarray, *, mask=None, reduce: Literal[False], run_lpips_vgg: bool = ...) -> Dict[str, np.ndarray]: ...
 
 
 @run_on_host()
@@ -125,17 +123,10 @@ def compute_metrics(pred, gt, *, mask=None, reduce: bool = True, run_lpips_vgg: 
 
 
 def path_is_video(path: str) -> bool:
-    return (path.endswith(".mp4") or 
-            path.endswith(".avi") or 
-            path.endswith(".gif") or 
-            path.endswith(".webp") or
-            path.endswith(".mov"))
+    return path.endswith(".mp4") or path.endswith(".avi") or path.endswith(".gif") or path.endswith(".webp") or path.endswith(".mov")
 
 
-def evaluate(predictions: str, 
-             output: str, 
-             description: str = "evaluating", 
-             evaluation_protocol: Optional[EvaluationProtocol] = None):
+def evaluate(predictions: str, output: str, description: str = "evaluating", evaluation_protocol: Optional[EvaluationProtocol] = None):
     """
     Evaluate a set of predictions.
 
@@ -168,19 +159,13 @@ def evaluate(predictions: str,
         def read_predictions() -> Iterable[RenderOutput]:
             # Load the prediction
             for relname in relpaths:
-                yield {
-                    "color": read_image(predictions_path / "color" / relname)
-                }
+                yield {"color": read_image(predictions_path / "color" / relname)}
 
-        gt_image_paths = [
-            str(predictions_path / "gt-color" / x) for x in relpaths
-        ]
+        gt_image_paths = [str(predictions_path / "gt-color" / x) for x in relpaths]
         gt_images = list(map(read_image, gt_image_paths))
         if (predictions_path / "mask").exists():
             gt_masks_root = str(predictions_path / "mask")
-            gt_mask_paths = [
-                str(Path(gt_masks_root).joinpath(x).with_suffix(".png")) for x in relpaths
-            ]
+            gt_mask_paths = [str(Path(gt_masks_root).joinpath(x).with_suffix(".png")) for x in relpaths]
             gt_masks = list(map(read_mask, gt_mask_paths))
         else:
             gt_masks_root = None
@@ -188,6 +173,7 @@ def evaluate(predictions: str,
             gt_mask_paths = None
         with suppress_type_checks():
             from pprint import pprint
+
             pprint(nb_info)
             dataset = new_dataset(
                 cameras=typing.cast(Cameras, None),
@@ -197,10 +183,12 @@ def evaluate(predictions: str,
                 mask_paths_root=gt_masks_root,
                 metadata=typing.cast(Dict, nb_info.get("render_dataset_metadata", nb_info.get("dataset_metadata", {}))),
                 images=gt_images,
-                masks=gt_masks)
+                masks=gt_masks,
+            )
 
             # Evaluate the prediction
             with tqdm(desc=description, dynamic_ncols=True, total=len(relpaths)) as progress:
+
                 def collect_metrics_lists():
                     for i, pred in enumerate(read_predictions()):
                         dataset_slice = dataset_index_select(dataset, [i])
@@ -217,20 +205,21 @@ def evaluate(predictions: str,
 
                 metrics = evaluation_protocol.accumulate_metrics(collect_metrics_lists())
 
-
         predictions_sha, ground_truth_sha = get_predictions_sha(str(predictions_path))
 
         # If output is specified, write the results to a file
         if os.path.exists(str(output)):
             raise FileExistsError(f"{output} already exists")
 
-        out = save_evaluation_results(str(output),
-                                      metrics=metrics, 
-                                      metrics_lists=metrics_lists, 
-                                      predictions_sha=predictions_sha,
-                                      ground_truth_sha=ground_truth_sha,
-                                      evaluation_protocol=evaluation_protocol.get_name(),
-                                      nb_info=nb_info)
+        out = save_evaluation_results(
+            str(output),
+            metrics=metrics,
+            metrics_lists=metrics_lists,
+            predictions_sha=predictions_sha,
+            ground_truth_sha=ground_truth_sha,
+            evaluation_protocol=evaluation_protocol.get_name(),
+            nb_info=nb_info,
+        )
         return out
 
 
@@ -265,8 +254,7 @@ class DefaultEvaluationProtocol(EvaluationProtocol):
         if dataset.get("masks") is not None:
             assert dataset["masks"] is not None  # pyright issues
             mask = convert_image_dtype(dataset["masks"][0], np.float32)
-        return compute_metrics(pred_f[None], gt_f[None], run_lpips_vgg=self._lpips_vgg, mask=mask, 
-                               reduce=True)
+        return compute_metrics(pred_f[None], gt_f[None], run_lpips_vgg=self._lpips_vgg, mask=mask, reduce=True)
 
     def accumulate_metrics(self, metrics: Iterable[Dict[str, Union[float, int]]]) -> Dict[str, Union[float, int]]:
         acc = {}
@@ -299,10 +287,11 @@ def with_supported_camera_models(supported_camera_models):
 
             out = render(cam, *args, **kwargs)
             if original_camera is not None:
-                out = cast(RenderOutput, {
-                    k: _cameras.warp_image_between_cameras(cam, original_camera, cast(np.ndarray, v)) for k, v in out.items()})
+                out = cast(RenderOutput, {k: _cameras.warp_image_between_cameras(cam, original_camera, cast(np.ndarray, v)) for k, v in out.items()})
             return out
+
         return cast(TRender, _render)
+
     return decorator
 
 
@@ -317,7 +306,7 @@ def render_all_images(
     if evaluation_protocol is None:
         evaluation_protocol = build_evaluation_protocol(dataset["metadata"]["evaluation_protocol"])
     logging.info(f"Rendering images with evaluation protocol {evaluation_protocol.get_name()}")
-    background_color =  dataset["metadata"].get("background_color", None)
+    background_color = dataset["metadata"].get("background_color", None)
     if background_color is not None:
         background_color = convert_image_dtype(np.array(background_color), np.uint8)
     if nb_info is None:
@@ -325,14 +314,14 @@ def render_all_images(
     else:
         nb_info = nb_info.copy()
         dataset_colorspace = dataset["metadata"].get("color_space", "srgb")
-        assert dataset_colorspace == nb_info.get("color_space", "srgb"), \
-            f"Dataset color space {dataset_colorspace} != method color space {nb_info.get('color_space')}"
+        assert dataset_colorspace == nb_info.get("color_space", "srgb"), f"Dataset color space {dataset_colorspace} != method color space {nb_info.get('color_space')}"
         if "dataset_background_color" in nb_info:
             info_background_color = nb_info.get("dataset_background_color")
             if info_background_color is not None:
                 info_background_color = np.array(info_background_color, np.uint8)
-            assert info_background_color is None or (background_color is not None and np.array_equal(info_background_color, background_color)), \
-                f"Dataset background color {background_color} != method background color {info_background_color}"
+            assert info_background_color is None or (
+                background_color is not None and np.array_equal(info_background_color, background_color)
+            ), f"Dataset background color {background_color} != method background color {info_background_color}"
     nb_info["checkpoint_sha256"] = get_method_sha(method)
     nb_info["evaluation_protocol"] = evaluation_protocol.get_name()
 
@@ -340,14 +329,8 @@ def render_all_images(
         for i in range(len(dataset["cameras"])):
             yield evaluation_protocol.render(method, dataset_index_select(dataset, [i]))
 
-    with tqdm(desc=description or "", 
-              disable=description is None, 
-              total=len(dataset["cameras"]), 
-              dynamic_ncols=True) as progress:
-        for val in _save_predictions_iterate(output,
-                                             _render_all(),
-                                             dataset=dataset,
-                                             nb_info=nb_info):
+    with tqdm(desc=description or "", disable=description is None, total=len(dataset["cameras"]), dynamic_ncols=True) as progress:
+        for val in _save_predictions_iterate(output, _render_all(), dataset=dataset, nb_info=nb_info):
             progress.update(1)
             yield val
 
@@ -369,10 +352,7 @@ def render_frames(
     color_space = "srgb"
     background_color = nb_info.get("background_color") if nb_info is not None else None
     expected_scene_scale = nb_info.get("expected_scene_scale") if nb_info is not None else None
-    output_types_map = {
-        (x if isinstance(x, str) else x["name"]): (x if isinstance(x, str) else x.get("type", x["name"]))
-        for x in info.get("supported_outputs", ["color"])
-    }
+    output_types_map = {(x if isinstance(x, str) else x["name"]): (x if isinstance(x, str) else x.get("type", x["name"])) for x in info.get("supported_outputs", ["color"])}
     for output_name in output_names:
         if output_name not in output_types_map:
             raise ValueError(f"Output type {output_name} not supported by method. Supported types: {list(output_types_map.keys())}")
@@ -388,16 +368,10 @@ def render_frames(
             for output_name in output_names:
                 output_type = output_types_map[output_name]
                 if output_type == "color":
-                    pred_image = image_to_srgb(pred[output_name], np.uint8, 
-                                               color_space=color_space, 
-                                               allow_alpha=allow_transparency, 
-                                               background_color=background_color)
+                    pred_image = image_to_srgb(pred[output_name], np.uint8, color_space=color_space, allow_alpha=allow_transparency, background_color=background_color)
                     out[output_name] = pred_image
                 elif output_type == "depth":
-                    depth_rgb = visualize_depth(
-                            pred[output_name], 
-                            near_far=cameras.nears_fars[i] if cameras.nears_fars is not None else None, 
-                            expected_scale=expected_scene_scale)
+                    depth_rgb = visualize_depth(pred[output_name], near_far=cameras.nears_fars[i] if cameras.nears_fars is not None else None, expected_scale=expected_scene_scale)
                     out[output_name] = convert_image_dtype(depth_rgb, np.uint8)
                 elif output_type == "accumulation":
                     out[output_name] = convert_image_dtype(apply_colormap(pred[output_name], pallete="coolwarm"), np.uint8)
@@ -409,6 +383,7 @@ def render_frames(
     def _zip_writer(output):
         with zipfile.ZipFile(output, "w") as zip:
             i = 0
+
             def _write_frame(frame):
                 nonlocal i
                 rel_path = f"{i:05d}.png"
@@ -421,21 +396,23 @@ def render_frames(
                     zinfo.compress_type = zip.compression
                     if hasattr(zip, "_compresslevel"):
                         zinfo._compresslevel = zip.compresslevel  # type: ignore
-                    zinfo.external_attr = 0o600 << 16     # ?rw-------
+                    zinfo.external_attr = 0o600 << 16  # ?rw-------
 
-                    with zip.open(zinfo, 'w') as dest:
+                    with zip.open(zinfo, "w") as dest:
                         if not hasattr(dest, "name"):
                             # For older versions of Python
                             dest.name = lpath  # type: ignore
                         assert dest.name == lpath
                         save_image(cast(BinaryIO, dest), image)
                 i += 1
+
             yield _write_frame
 
     @contextmanager
     def _targz_writer(output):
         with tarfile.open(output, "w:gz") as tar:
             i = 0
+
             def _write_frame(frame):
                 nonlocal i
                 rel_path = f"{i:05d}.png"
@@ -451,6 +428,7 @@ def render_frames(
                         f.seek(0)
                         tar.addfile(tarinfo=tarinfo, fileobj=f)
                 i += 1
+
             yield _write_frame
 
     vidwriter = 0
@@ -464,9 +442,10 @@ def render_frames(
         except ImportError:
             raise ImportError("mediapy is required to write videos. Install it with `pip install mediapy`")
 
-        codec = 'gif' if output.endswith(".gif") else "h264"
+        codec = "gif" if output.endswith(".gif") else "h264"
         writer = None
         try:
+
             def _add_frame(frame):
                 nonlocal writer
                 if isinstance(frame, dict):
@@ -477,6 +456,7 @@ def render_frames(
                     writer = mediapy.VideoWriter(output, (h, w), fps=fps, codec=codec)
                     writer.__enter__()
                 writer.add_image(frame)
+
             yield _add_frame
         finally:
             if writer is not None:
@@ -487,6 +467,7 @@ def render_frames(
     def _folder_writer(output):
         os.makedirs(output, exist_ok=True)
         i = 0
+
         def _add_frame(frame):
             nonlocal i
             rel_path = f"{i:05d}.png"
@@ -499,6 +480,7 @@ def render_frames(
                 with open(os.path.join(output, rel_path), "wb") as f:
                     save_image(f, frame)
             i += 1
+
         yield _add_frame
 
     writers = {}
@@ -537,15 +519,11 @@ def trajectory_get_cameras(trajectory: Trajectory) -> Cameras:
         raise NotImplementedError("Only pinhole camera model is supported")
     poses = np.stack([x["pose"] for x in trajectory["frames"]])
     intrinsics = np.stack([x["intrinsics"] for x in trajectory["frames"]])
-    camera_models = np.array([camera_model_to_int(trajectory["camera_model"])]*len(poses), dtype=np.int32)
-    image_sizes = np.array([list(trajectory["image_size"])]*len(poses), dtype=np.int32)
-    return new_cameras(poses=poses, 
-                       intrinsics=intrinsics, 
-                       camera_models=camera_models, 
-                       image_sizes=image_sizes,
-                       distortion_parameters=np.zeros((len(poses), 0), dtype=np.float32),
-                       nears_fars=None, 
-                       metadata=None)
+    camera_models = np.array([camera_model_to_int(trajectory["camera_model"])] * len(poses), dtype=np.int32)
+    image_sizes = np.array([list(trajectory["image_size"])] * len(poses), dtype=np.int32)
+    return new_cameras(
+        poses=poses, intrinsics=intrinsics, camera_models=camera_models, image_sizes=image_sizes, distortion_parameters=np.zeros((len(poses), 0), dtype=np.float32), nears_fars=None, metadata=None
+    )
 
 
 def trajectory_get_embeddings(method: Method, trajectory: Trajectory) -> Optional[List[np.ndarray]]:
@@ -582,8 +560,10 @@ def run_inside_eval_container(backend_name: Optional[str] = None):
     Ensures PyTorch is available to compute extra metrics (lpips)
     """
     from .backends import get_backend
+
     try:
         import torch as _
+
         yield None
         return
     except ImportError:
@@ -592,13 +572,14 @@ def run_inside_eval_container(backend_name: Optional[str] = None):
     logging.warning("PyTorch is not available in the current environment, we will create a new environment to compute extra metrics (lpips)")
     if backend_name is None:
         backend_name = os.environ.get("NERFBASELINES_BACKEND", None)
-    backend = get_backend({
-        "id": "metrics",
-        "method_class": "base",
-        "conda": {
-            "environment_name": "_metrics", 
-            "python_version": "3.10",
-            "install_script": """
+    backend = get_backend(
+        {
+            "id": "metrics",
+            "method_class": "base",
+            "conda": {
+                "environment_name": "_metrics",
+                "python_version": "3.10",
+                "install_script": """
 # Install dependencies
 pip install \
     opencv-python==4.9.0.80 \
@@ -606,9 +587,11 @@ pip install \
     torchvision==0.17.0 \
     'numpy<2.0.0' \
     --extra-index-url https://download.pytorch.org/whl/cu118
-"""
-        }}, backend=backend_name)
+""",
+            },
+        },
+        backend=backend_name,
+    )
     with backend:
         backend.install()
         yield None
-
