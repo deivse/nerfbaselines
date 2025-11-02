@@ -10,19 +10,7 @@ import numpy as np
 import time
 import tarfile
 import os
-from typing import (
-    Union,
-    Iterator,
-    Any,
-    Dict,
-    List,
-    Iterable,
-    Optional,
-    TypeVar,
-    overload,
-    ContextManager,
-    IO,
-)
+from typing import Tuple, Union, Iterator, Any, Dict, List, Iterable, Optional, TypeVar, overload, ContextManager, IO
 import zipfile
 import contextlib
 from pathlib import Path
@@ -31,6 +19,8 @@ import logging
 import shutil
 from tqdm import tqdm
 import urllib.request
+
+from nerfbaselines._types import PatchSpec
 from . import (
     Trajectory,
     Method,
@@ -106,17 +96,7 @@ def wget(
         block_size = 1024 * 32
         rfile = response
         if desc is not None:
-            rfile = stack.enter_context(
-                tqdm.wrapattr(
-                    rfile,
-                    "read",
-                    total=total_size_in_bytes,
-                    unit="iB",
-                    unit_scale=True,
-                    desc=desc,
-                    dynamic_ncols=True,
-                )
-            )
+            rfile = stack.enter_context(tqdm.wrapattr(rfile, "read", total=total_size_in_bytes, unit="iB", unit_scale=True, desc=desc, dynamic_ncols=True))
         decompressor = None
         if response.getheader("Content-Encoding", "") == "gzip":
             decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
@@ -345,15 +325,7 @@ def deserialize_nb_info(info: dict) -> dict:
     return info
 
 
-def new_nb_info(
-    train_dataset_metadata,
-    method: Method,
-    config_overrides,
-    evaluation_protocol=None,
-    resources_utilization_info=None,
-    total_train_time=None,
-    applied_presets=None,
-):
+def new_nb_info(train_dataset_metadata, method: Method, config_overrides, evaluation_protocol=None, resources_utilization_info=None, total_train_time=None, applied_presets=None):
     dataset_metadata = train_dataset_metadata.copy()
     model_info = method.get_info()
 
@@ -526,12 +498,7 @@ def get_method_sha(method: Method) -> str:
 
 
 def serialize_evaluation_results(
-    metrics: Dict,
-    metrics_lists,
-    predictions_sha: str,
-    ground_truth_sha: str,
-    evaluation_protocol: str,
-    nb_info: Dict,
+    metrics: Dict, metrics_lists, patch_spec: PatchSpec, predictions_sha: str, ground_truth_sha: str, evaluation_protocol: str, nb_info: Dict
 ):
     precision = 5
     nb_info = serialize_nb_info(nb_info)
@@ -545,12 +512,29 @@ def serialize_evaluation_results(
     render_dataset_metadata = nb_info.pop("render_dataset_metadata", None)
     if render_dataset_metadata is not None:
         out["render_dataset_metadata"] = render_dataset_metadata
+
+    out["patch_info"] = {
+        "patch_size": list(patch_spec.patch_size),
+        "patch_grid": list(patch_spec.patch_grid),
+    }
+
+    def round_dict_values(d: Dict):
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, dict):
+                out[k] = round_dict_values(v)
+            elif isinstance(v, float):
+                out[k] = round(v, precision)
+            else:
+                out[k] = v
+        return out
+
     out.update(
         {
             "nb_info": nb_info,
             "evaluate_datetime": datetime.utcnow().isoformat(timespec="seconds"),
             "evaluate_version": __version__,
-            "metrics": {k: round(v, precision) for k, v in metrics.items()},
+            "metrics": round_dict_values(metrics),
             "metrics_raw": {k: _encode_values(metrics_lists[k]) for k in metrics_lists},
             "metrics_sha256": get_metrics_hash(metrics_lists),
             "predictions_sha256": predictions_sha,
@@ -562,37 +546,16 @@ def serialize_evaluation_results(
 
 
 def save_evaluation_results(
-    file,
-    metrics: Dict,
-    metrics_lists,
-    predictions_sha: str,
-    ground_truth_sha: str,
-    evaluation_protocol: str,
-    nb_info: Dict,
+    file, metrics: Dict, metrics_lists, patch_spec: PatchSpec, predictions_sha: str, ground_truth_sha: str, evaluation_protocol: str, nb_info: Dict
 ):
     if isinstance(file, str):
         if os.path.exists(file):
             raise FileExistsError(f"{file} already exists")
         with open(file, "w", encoding="utf8") as f:
-            return save_evaluation_results(
-                f,
-                metrics,
-                metrics_lists,
-                predictions_sha,
-                ground_truth_sha,
-                evaluation_protocol,
-                nb_info,
-            )
+            return save_evaluation_results(f, metrics, metrics_lists, patch_spec, predictions_sha, ground_truth_sha, evaluation_protocol, nb_info)
 
     else:
-        out = serialize_evaluation_results(
-            metrics,
-            metrics_lists,
-            predictions_sha,
-            ground_truth_sha,
-            evaluation_protocol,
-            nb_info,
-        )
+        out = serialize_evaluation_results(metrics, metrics_lists, patch_spec, predictions_sha, ground_truth_sha, evaluation_protocol, nb_info)
         json.dump(out, file, indent=2)
         return out
 
@@ -712,12 +675,7 @@ def save_predictions(output: str, predictions: Iterable[RenderOutput], dataset: 
 
 
 def save_output_artifact(
-    model_path: Union[str, Path],
-    predictions_path: Union[str, Path],
-    metrics_path: Union[str, Path],
-    tensorboard_path: Union[str, Path],
-    output_path: Union[str, Path],
-    validate: bool = True,
+    model_path: Union[str, Path], predictions_path: Union[str, Path], metrics_path: Union[str, Path], tensorboard_path: Union[str, Path], output_path: Union[str, Path], validate: bool = True
 ):
     """Prepares artifacts for upload to the NeRF benchmark.
 

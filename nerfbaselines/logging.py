@@ -715,6 +715,8 @@ def log_metrics(logger: Logger, metrics, *, prefix: str = "", step: int):
                 event.add_scalar(tag, val)
             elif isinstance(val, str):
                 event.add_text(tag, val)
+            elif k == "patches":
+                continue
             else:
                 raise ValueError(f"Unknown metric type for {tag}: {val}")
 

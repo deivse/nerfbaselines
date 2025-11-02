@@ -39,6 +39,7 @@ from .utils import (
 )
 from .datasets import dataset_index_select
 from .evaluation import (
+    calculate_patch_spec,
     render_all_images,
     evaluate,
     build_evaluation_protocol,
@@ -289,7 +290,7 @@ class MetricsAccumulator:
         return state
 
 
-def eval_few(method: Method, logger: Logger, dataset: Dataset, *, split: str, step, evaluation_protocol: EvaluationProtocol):
+def eval_few(method: Method, logger: Logger, dataset: Dataset, *, num_patches: int, split: str, step, evaluation_protocol: EvaluationProtocol):
     (rand_number,) = struct.unpack("<Q", hashlib.sha1(str(step).encode("utf8")).digest()[:8])
 
     idx = rand_number % len(dataset["image_paths"])
@@ -306,7 +307,8 @@ def eval_few(method: Method, logger: Logger, dataset: Dataset, *, split: str, st
     predictions = evaluation_protocol.render(method, dataset_slice)
     elapsed = time.perf_counter() - start
 
-    _metrics = evaluation_protocol.evaluate(predictions, dataset_slice)
+    patch_spec = calculate_patch_spec((image_sizes[0][1], image_sizes[0][0]), num_patches)
+    _metrics = evaluation_protocol.evaluate(predictions, dataset_slice, patch_spec)
     metrics = cast(Dict[str, Union[float, int, str]], _metrics)
     del _metrics
     w, h = dataset_slice["cameras"].image_sizes[0]
@@ -367,7 +369,7 @@ def eval_few(method: Method, logger: Logger, dataset: Dataset, *, split: str, st
                 )
 
 
-def eval_all(method: Method, logger: Optional[Logger], dataset: Dataset, *, output: str, step: int, evaluation_protocol: EvaluationProtocol, split: str, nb_info):
+def eval_all(method: Method, logger: Optional[Logger], dataset: Dataset, *, num_patches: int, output: str, step: int, evaluation_protocol: EvaluationProtocol, split: str, nb_info):
     metrics: Optional[Dict[str, float]] = {} if logger else None
     expected_scene_scale = dataset["metadata"].get("expected_scene_scale")
 
@@ -426,7 +428,7 @@ def eval_all(method: Method, logger: Optional[Logger], dataset: Dataset, *, outp
     elapsed = time.perf_counter() - start
 
     # Compute metrics
-    info = evaluate(output, output_metrics, evaluation_protocol=evaluation_protocol, description=f"evaluating all images at step={step}")
+    info = evaluate(output, output_metrics, evaluation_protocol=evaluation_protocol, dataset=dataset, description=f"evaluating all images at step={step}", num_patches=num_patches)
     metrics = info["metrics"]
 
     if logger:
@@ -534,6 +536,7 @@ class Trainer:
         save_iters: Indices = Indices.every_iters(10_000, zero=True),
         eval_few_iters: Indices = Indices.every_iters(2_000),
         eval_all_iters: Indices = Indices([-1]),
+        eval_num_patches: int = 3,
         logger: Union[Callable[[str], Logger], Logger, None] = None,
         generate_output_artifact: Optional[bool] = None,
         config_overrides: Optional[Dict[str, Any]] = None,
@@ -554,6 +557,7 @@ class Trainer:
         self.save_iters = save_iters
         self.eval_few_iters = eval_few_iters
         self.eval_all_iters = eval_all_iters
+        self.eval_num_patches = eval_num_patches
         self.generate_output_artifact = generate_output_artifact
         self.config_overrides = config_overrides
         if logger is not None and not callable(logger):
@@ -780,9 +784,14 @@ class Trainer:
                 if self.step in self.eval_all_iters:
                     final_metrics = self.eval_all()
 
+        def skip_if_not_num(v):
+            if isinstance(v, int) or isinstance(v, float):
+                return f"{v:.4f}"
+            return "..."
+
         # We can print the results because the evaluation was run for the last step
         if final_metrics is not None:
-            logging.info("Final evaluation results:\n" + "\n".join(f"   {k.replace('_','-')}: {v:.4f}" for k, v in final_metrics.items()))
+            logging.info("Final evaluation results:\n" + "\n".join(f"   {k.replace('_','-')}: {skip_if_not_num(v)}" for k, v in final_metrics.items()))
 
         # Save if not saved by default
         if self.step not in self.save_iters:
@@ -805,7 +814,9 @@ class Trainer:
             return
         logger = self.get_logger()
         nb_info = self._get_nb_info()
-        return eval_all(self.method, logger, self.test_dataset, step=self.step, evaluation_protocol=self._evaluation_protocol, split="test", nb_info=nb_info, output=self.output)
+        return eval_all(
+            self.method, logger, self.test_dataset, step=self.step, evaluation_protocol=self._evaluation_protocol, split="test", num_patches=self.eval_num_patches, nb_info=nb_info, output=self.output
+        )
 
     def eval_few(self):
         logger = self.get_logger()
@@ -816,7 +827,7 @@ class Trainer:
         idx = rand_number % len(self._train_dataset_for_eval["image_paths"])
         dataset_slice = dataset_index_select(self._train_dataset_for_eval, slice(idx, idx + 1))
 
-        eval_few(self.method, logger, dataset_slice, split="train", step=self.step, evaluation_protocol=self._evaluation_protocol)
+        eval_few(self.method, logger, dataset_slice, split="train", num_patches=self.eval_num_patches, step=self.step, evaluation_protocol=self._evaluation_protocol)
 
         if self.test_dataset is None:
             logging.warning("Skipping eval_few on test dataset - no eval dataset")
@@ -824,4 +835,4 @@ class Trainer:
 
         idx = rand_number % len(self.test_dataset["image_paths"])
         dataset_slice = dataset_index_select(self.test_dataset, slice(idx, idx + 1))
-        eval_few(self.method, logger, dataset_slice, split="test", step=self.step, evaluation_protocol=self._evaluation_protocol)
+        eval_few(self.method, logger, dataset_slice, split="test", num_patches=self.eval_num_patches, step=self.step, evaluation_protocol=self._evaluation_protocol)

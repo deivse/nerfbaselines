@@ -1,7 +1,23 @@
 import sys
 from abc import abstractmethod
 import typing
-from typing import Optional, Iterable, List, Dict, Any, cast, Union, Sequence, TYPE_CHECKING, overload, TypeVar, Iterator, Callable, Tuple
+from typing import (
+    NamedTuple,
+    Optional,
+    Iterable,
+    List,
+    Dict,
+    Any,
+    cast,
+    Union,
+    Sequence,
+    TYPE_CHECKING,
+    overload,
+    TypeVar,
+    Iterator,
+    Callable,
+    Tuple,
+)
 from dataclasses import dataclass
 import dataclasses
 import os
@@ -62,7 +78,14 @@ NB_PREFIX = os.path.expanduser(os.environ.get("NERFBASELINES_PREFIX", "~/.cache/
 ColorSpace = Literal["srgb", "linear"]
 CameraModel = Literal["pinhole", "opencv", "opencv_fisheye", "full_opencv"]
 BackendName = Literal["conda", "docker", "apptainer", "python"]
-DatasetFeature = Literal["color", "points3D_xyz", "points3D_rgb", "images_points3D_indices", "images_points2D_xy", "points3D_error"]
+DatasetFeature = Literal[
+    "color",
+    "points3D_xyz",
+    "points3D_rgb",
+    "images_points3D_indices",
+    "images_points2D_xy",
+    "points3D_error",
+]
 TTensor = TypeVar("TTensor", np.ndarray, "torch.Tensor", "jnp.ndarray")
 TTensor_co = TypeVar("TTensor_co", np.ndarray, "torch.Tensor", "jnp.ndarray", covariant=True)
 
@@ -265,7 +288,25 @@ def new_cameras(
         shape[-1] = 0
         distortion_parameters = np.zeros(tuple(shape), dtype=intrinsics.dtype)
     return GenericCamerasImpl[np.ndarray](
-        poses=poses, intrinsics=intrinsics, camera_models=camera_models, distortion_parameters=distortion_parameters, image_sizes=image_sizes, nears_fars=nears_fars, metadata=metadata
+        poses=poses,
+        intrinsics=intrinsics,
+        camera_models=camera_models,
+        distortion_parameters=distortion_parameters,
+        image_sizes=image_sizes,
+        nears_fars=nears_fars,
+        metadata=metadata,
+    )
+
+
+def reorder_cameras(cameras: Cameras, indices: Sequence[int]) -> Cameras:
+    return GenericCamerasImpl[np.ndarray](
+        poses=cameras.poses[indices],
+        intrinsics=cameras.intrinsics[indices],
+        camera_models=cameras.camera_models[indices],
+        distortion_parameters=cameras.distortion_parameters[indices],
+        image_sizes=cameras.image_sizes[indices],
+        nears_fars=cameras.nears_fars[indices] if cameras.nears_fars is not None else None,
+        metadata=cameras.metadata[indices] if cameras.metadata is not None else None,
     )
 
 
@@ -422,7 +463,13 @@ class RenderOptions(TypedDict, total=False):
 
 @runtime_checkable
 class Method(Protocol):
-    def __init__(self, *, checkpoint: Union[str, None] = None, train_dataset: Optional[Dataset] = None, config_overrides: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        *,
+        checkpoint: Union[str, None] = None,
+        train_dataset: Optional[Dataset] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
+    ):
         pass
 
     @classmethod
@@ -500,15 +547,30 @@ class Method(Protocol):
         raise NotImplementedError()
 
 
+class PatchSpec(NamedTuple):
+    patch_size: Tuple[int, int]
+    patch_grid: Tuple[int, int]
+
+
 @runtime_checkable
 class EvaluationProtocol(Protocol):
+    MetricsDict = Dict[str, Union[float, int]]
+    EvalDict = Dict[str, Union[float, int, list[MetricsDict]]]
+    AccumDict = Dict[str, Union[float, int, list[list[MetricsDict]]]]
+
     def get_name(self) -> str: ...
 
-    def render(self, method: Method, dataset: Dataset, *, options: Optional[RenderOptions] = None) -> RenderOutput: ...
+    def render(
+        self,
+        method: Method,
+        dataset: Dataset,
+        *,
+        options: Optional[RenderOptions] = None,
+    ) -> RenderOutput: ...
 
-    def evaluate(self, predictions: RenderOutput, dataset: Dataset) -> Dict[str, Union[float, int]]: ...
+    def evaluate(self, predictions: RenderOutput, dataset: Dataset, patch_spec: PatchSpec) -> EvalDict: ...
 
-    def accumulate_metrics(self, metrics: Iterable[Dict[str, Union[float, int]]]) -> Dict[str, Union[float, int]]: ...
+    def accumulate_metrics(self, metrics: Iterable[EvalDict]) -> AccumDict: ...
 
 
 class LicenseSpec(TypedDict, total=False):
@@ -531,7 +593,14 @@ class DatasetSpecMetadata(TypedDict, total=False):
 
 
 class LoadDatasetFunction(Protocol):
-    def __call__(self, path: str, split: str, *, features: Optional[FrozenSet[DatasetFeature]] = None, **kwargs) -> UnloadedDataset: ...
+    def __call__(
+        self,
+        path: str,
+        split: str,
+        *,
+        features: Optional[FrozenSet[DatasetFeature]] = None,
+        **kwargs,
+    ) -> UnloadedDataset: ...
 
 
 class DownloadDatasetFunction(Protocol):
@@ -564,11 +633,32 @@ class LoggerEvent(Protocol):
 
     def add_text(self, tag: str, text: str) -> None: ...
 
-    def add_image(self, tag: str, image: np.ndarray, display_name: Optional[str] = None, description: Optional[str] = None, **kwargs) -> None: ...
+    def add_image(
+        self,
+        tag: str,
+        image: np.ndarray,
+        display_name: Optional[str] = None,
+        description: Optional[str] = None,
+        **kwargs,
+    ) -> None: ...
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None: ...
+    def add_embedding(
+        self,
+        tag: str,
+        embeddings: np.ndarray,
+        *,
+        images: Optional[List[np.ndarray]] = None,
+        labels: Union[None, List[Dict[str, str]], List[str]] = None,
+    ) -> None: ...
 
-    def add_plot(self, tag: str, *data: np.ndarray, axes_labels: Optional[Sequence[str]] = None, title: Optional[str] = None, **kwargs) -> None: ...
+    def add_plot(
+        self,
+        tag: str,
+        *data: np.ndarray,
+        axes_labels: Optional[Sequence[str]] = None,
+        title: Optional[str] = None,
+        **kwargs,
+    ) -> None: ...
 
     def add_histogram(self, tag: str, values: np.ndarray, *, num_bins: Optional[int] = None) -> None: ...
 
@@ -581,9 +671,25 @@ class Logger(Protocol):
 
     def add_text(self, tag: str, text: str, step: int) -> None: ...
 
-    def add_image(self, tag: str, image: np.ndarray, step: int, *, display_name: Optional[str] = None, description: Optional[str] = None) -> None: ...
+    def add_image(
+        self,
+        tag: str,
+        image: np.ndarray,
+        step: int,
+        *,
+        display_name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> None: ...
 
-    def add_embedding(self, tag: str, embeddings: np.ndarray, step: int, *, images: Optional[List[np.ndarray]] = None, labels: Union[None, List[Dict[str, str]], List[str]] = None) -> None: ...
+    def add_embedding(
+        self,
+        tag: str,
+        embeddings: np.ndarray,
+        step: int,
+        *,
+        images: Optional[List[np.ndarray]] = None,
+        labels: Union[None, List[Dict[str, str]], List[str]] = None,
+    ) -> None: ...
 
 
 class OutputArtifact(TypedDict, total=False):

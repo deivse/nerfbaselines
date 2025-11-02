@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 
 import nerfbaselines
+from nerfbaselines._types import PatchSpec, reorder_cameras
 from .utils import (
     apply_colormap,
     image_to_srgb,
@@ -122,11 +123,85 @@ def compute_metrics(pred, gt, *, mask=None, reduce: bool = True, run_lpips_vgg: 
     return out
 
 
+def calculate_patch_spec(image_shape: Tuple[int, int], num_patches_small_axis: int) -> PatchSpec:
+    """
+    Calculate patch size and grid based on image shape and number of patches on the smaller axis.
+
+    Args:
+        image_shape: Shape of the image (height, width).
+        num_patches_small_axis: Number of patches on the smaller image axis.
+    Returns:
+        A tuple containing:
+        - patch_size: A tuple (patch_height, patch_width).
+        - patch_grid: A tuple (num_patches_height, num_patches_width).
+    """
+    small_axis = np.argmin([image_shape[0], image_shape[1]])
+    large_axis = 1 - small_axis
+    patch_size_small_axis = int(image_shape[small_axis] // num_patches_small_axis)
+    num_patches_large_axis = int(np.ceil(image_shape[large_axis] / patch_size_small_axis))
+    patch_size_large_axis = int(image_shape[large_axis] // num_patches_large_axis)
+
+    if small_axis == 0:
+        patch_grid = (num_patches_small_axis, int(num_patches_large_axis))
+        patch_size = (patch_size_small_axis, patch_size_large_axis)
+    else:
+        patch_grid = (int(num_patches_large_axis), num_patches_small_axis)
+        patch_size = (patch_size_large_axis, patch_size_small_axis)
+    return PatchSpec(patch_size=patch_size, patch_grid=patch_grid)
+
+
+@run_on_host()
+def compute_per_patch_metrics(pred, gt, sfm_points_img, *, mask=None, reduce: bool = True, run_lpips_vgg: bool = False, patch_spec: PatchSpec) -> List[Dict[str, Union[float, int]]]:
+    def reduction(x):
+        if reduce:
+            return x.mean().item()
+        else:
+            return x
+
+    pred = convert_image_dtype(pred, np.float32)
+    gt = convert_image_dtype(gt, np.float32)
+    if mask is not None:
+        mask = convert_image_dtype(mask, np.float32)[..., None]
+        pred = pred * mask
+        gt = gt * mask
+
+    patches = []
+    patch_grid = patch_spec.patch_grid
+    patch_size = patch_spec.patch_size
+    for i in range(patch_grid[0]):
+        for j in range(patch_grid[1]):
+            p_start = (i * patch_size[0], j * patch_size[1])
+            p_end = (p_start[0] + patch_size[0], p_start[1] + patch_size[1])
+            gt_patch = gt[:, p_start[0] : p_end[0], p_start[1] : p_end[1]]
+            pred_patch = pred[:, p_start[0] : p_end[0], p_start[1] : p_end[1]]
+
+            num_sfm_points_in_patch = sfm_points_img[
+                (sfm_points_img[:, 0] >= p_start[0]) & (sfm_points_img[:, 0] < p_end[0]) & (sfm_points_img[:, 1] >= p_start[1]) & (sfm_points_img[:, 1] < p_end[1])
+            ].shape[0]
+
+            pred_patch = pred_patch[..., : gt_patch.shape[-1]]
+            mse = metrics.mse(pred_patch, gt_patch)
+            out_patch = {
+                "num_sfm_points": num_sfm_points_in_patch,
+                "psnr": reduction(metrics.psnr(mse)),
+                "ssim": reduction(metrics.ssim(gt_patch, pred_patch)),
+                "mae": reduction(metrics.mae(gt_patch, pred_patch)),
+                "mse": reduction(mse),
+                "lpips": reduction(metrics.lpips(gt_patch, pred_patch)),
+            }
+            if run_lpips_vgg:
+                out_patch["lpips_vgg"] = reduction(metrics.lpips_vgg(gt_patch, pred_patch))
+            patches.append(out_patch)
+    return patches
+
+
 def path_is_video(path: str) -> bool:
     return path.endswith(".mp4") or path.endswith(".avi") or path.endswith(".gif") or path.endswith(".webp") or path.endswith(".mov")
 
 
-def evaluate(predictions: str, output: str, description: str = "evaluating", evaluation_protocol: Optional[EvaluationProtocol] = None):
+def evaluate(
+    predictions: str, output: str, description: str = "evaluating", num_patches: int = 3, evaluation_protocol: Optional[EvaluationProtocol] = None, dataset: Optional[Dataset] = None
+) -> Dict[str, Any]:
     """
     Evaluate a set of predictions.
 
@@ -134,6 +209,7 @@ def evaluate(predictions: str, output: str, description: str = "evaluating", eva
         predictions: Path to a directory containing the predictions.
         output: Path to a json file where the results will be written.
         description: Description of the evaluation, used for progress bar.
+        num_patches: Number of patches on the smaller image axis for per-patch metrics computation.
         evaluation_protocol: The evaluation protocol to use. If None, the protocol from info.json will be used.
     Returns:
         A dictionary containing the results.
@@ -156,6 +232,27 @@ def evaluate(predictions: str, output: str, description: str = "evaluating", eva
         relpaths = [str(x.relative_to(predictions_path / "color")) for x in (predictions_path / "color").glob("**/*") if x.is_file()]
         relpaths.sort()
 
+        if dataset is not None:
+            if nb_info["render_dataset_metadata"]["id"] != dataset["metadata"]["id"]:
+                raise RuntimeError(
+                    f"Dataset id mismatch between predictions and provided dataset. Predictions dataset id: {nb_info['render_dataset_metadata']['id']}, provided dataset id: {dataset['metadata']['id']}"
+                )
+            if nb_info["render_dataset_metadata"].get("scene") != dataset["metadata"].get("scene"):
+                raise RuntimeError(
+                    f"Dataset scene mismatch between predictions and provided dataset. Predictions dataset scene: {nb_info['render_dataset_metadata'].get('scene')}, provided dataset scene: {dataset['metadata'].get('scene')}"
+                )
+            
+            pred_ext = next(p.suffix for p in (predictions_path / "color").glob("**/*") if p.is_file())
+            predictions_filenames_no_ext = set(p.stem for p in (predictions_path / "color").glob("**/*") if p.is_file())
+            if len(predictions_filenames_no_ext) != len(dataset["image_paths"]):
+                raise RuntimeError(f"Number of predictions {len(predictions_filenames_no_ext)} does not match number of images in dataset{len(dataset['image_paths'])}.")
+            relpaths = []
+            for path in dataset["image_paths"]:
+                filename_no_ext = Path(path).relative_to(Path(dataset["image_paths_root"])).stem
+                if filename_no_ext not in predictions_filenames_no_ext:
+                    raise RuntimeError(f"Prediction for image {path} not found in predictions.")
+                relpaths.append(Path(path).with_suffix(pred_ext).name)
+
         def read_predictions() -> Iterable[RenderOutput]:
             # Load the prediction
             for relname in relpaths:
@@ -175,16 +272,22 @@ def evaluate(predictions: str, output: str, description: str = "evaluating", eva
             from pprint import pprint
 
             pprint(nb_info)
-            dataset = new_dataset(
-                cameras=typing.cast(Cameras, None),
-                image_paths=relpaths,
-                image_paths_root=str(predictions_path / "gt-color"),
-                mask_paths=gt_mask_paths,
-                mask_paths_root=gt_masks_root,
-                metadata=typing.cast(Dict, nb_info.get("render_dataset_metadata", nb_info.get("dataset_metadata", {}))),
-                images=gt_images,
-                masks=gt_masks,
-            )
+
+            if dataset is None:
+                dataset = new_dataset(
+                    cameras=typing.cast(Cameras, None),
+                    image_paths=relpaths,
+                    image_paths_root=str(predictions_path / "gt-color"),
+                    mask_paths=gt_mask_paths,
+                    mask_paths_root=gt_masks_root,
+                    metadata=typing.cast(Dict, nb_info.get("render_dataset_metadata", nb_info.get("dataset_metadata", {}))),
+                    images=gt_images,
+                    masks=gt_masks,
+                )
+
+            image_sizes = dataset["cameras"].image_sizes
+            assert all((image_sizes[i] == image_sizes[i + 1]).all() for i in range(len(image_sizes) - 1)), "All images must have the same size"
+            patch_spec = calculate_patch_spec((image_sizes[0][1], image_sizes[0][0]), num_patches)
 
             # Evaluate the prediction
             with tqdm(desc=description, dynamic_ncols=True, total=len(relpaths)) as progress:
@@ -192,8 +295,10 @@ def evaluate(predictions: str, output: str, description: str = "evaluating", eva
                 def collect_metrics_lists():
                     for i, pred in enumerate(read_predictions()):
                         dataset_slice = dataset_index_select(dataset, [i])
-                        metrics = evaluation_protocol.evaluate(pred, dataset_slice)
+                        metrics = evaluation_protocol.evaluate(pred, dataset_slice, patch_spec)
                         for k, v in metrics.items():
+                            if k == "patches":
+                                continue
                             if k not in metrics_lists:
                                 metrics_lists[k] = []
                             metrics_lists[k].append(v)
@@ -215,6 +320,7 @@ def evaluate(predictions: str, output: str, description: str = "evaluating", eva
             str(output),
             metrics=metrics,
             metrics_lists=metrics_lists,
+            patch_spec=patch_spec,
             predictions_sha=predictions_sha,
             ground_truth_sha=ground_truth_sha,
             evaluation_protocol=evaluation_protocol.get_name(),
@@ -240,7 +346,7 @@ class DefaultEvaluationProtocol(EvaluationProtocol):
     def get_name(self):
         return self._name
 
-    def evaluate(self, predictions: RenderOutput, dataset: Dataset) -> Dict[str, Union[float, int]]:
+    def evaluate(self, predictions: RenderOutput, dataset: Dataset, patch_spec: PatchSpec) -> EvaluationProtocol.EvalDict:
         assert len(dataset["images"]) == 1, "There must be exactly one image in the dataset"
         background_color = dataset["metadata"].get("background_color")
         color_space = dataset["metadata"]["color_space"]
@@ -254,14 +360,36 @@ class DefaultEvaluationProtocol(EvaluationProtocol):
         if dataset.get("masks") is not None:
             assert dataset["masks"] is not None  # pyright issues
             mask = convert_image_dtype(dataset["masks"][0], np.float32)
-        return compute_metrics(pred_f[None], gt_f[None], run_lpips_vgg=self._lpips_vgg, mask=mask, reduce=True)
+        out: dict = compute_metrics(pred_f[None], gt_f[None], run_lpips_vgg=self._lpips_vgg, mask=mask, reduce=True)
 
-    def accumulate_metrics(self, metrics: Iterable[Dict[str, Union[float, int]]]) -> Dict[str, Union[float, int]]:
-        acc = {}
+        if dataset["points3D_xyz"] is None or dataset["images_points3D_indices"] is None:
+            raise RuntimeError("Dataset does not contain 3D points information required for per-patch metrics computation")
+
+        sfm_points_3d = dataset["points3D_xyz"][dataset["images_points3D_indices"][0]]
+        sfm_points_image = _cameras.project(dataset["cameras"].item(), sfm_points_3d)
+        out["patches"] = compute_per_patch_metrics(pred_f[None], gt_f[None], sfm_points_image, run_lpips_vgg=self._lpips_vgg, mask=mask, reduce=True, patch_spec=patch_spec)
+        return out
+
+    def accumulate_metrics(self, metrics: Iterable[EvaluationProtocol.EvalDict]) -> EvaluationProtocol.AccumDict:
+        acc: EvaluationProtocol.AccumDict = {}
+
+        patches = []
         for i, data in enumerate(metrics):
             for k, v in data.items():
+                if k == "patches":
+                    continue
+
+                curr_val = acc.get(k, 0)
+
+                assert isinstance(v, float) or isinstance(v, int)
+                assert isinstance(curr_val, float) or isinstance(curr_val, int)
                 # acc[k] = (acc.get(k, 0) * i + v) / (i + 1)
-                acc[k] = acc.get(k, 0) * (i / (i + 1)) + v / (i + 1)
+                acc[k] = curr_val * (i / (i + 1)) + v / (i + 1)
+
+            assert isinstance(data["patches"], list)
+            patches.append(data["patches"])
+
+        acc["patches"] = patches
         return acc
 
 

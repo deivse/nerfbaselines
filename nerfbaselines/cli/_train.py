@@ -31,6 +31,7 @@ from ._common import SetParamOptionType, TupleClickType, IndicesClickType, click
 @click.option("--save-iters", type=IndicesClickType(), default=Indices([-1]), help="When to save the model", show_default=True)
 @click.option("--eval-few-iters", type=IndicesClickType(), default=Indices.every_iters(2_000), help="When to evaluate on few images", show_default=True)
 @click.option("--eval-all-iters", type=IndicesClickType(), default=Indices([-1]), help="When to evaluate all images", show_default=True)
+@click.option("--eval-num-patches", type=int, default=3, help="Number of patches on the smaller image axis. (Number of patches on larger image axis determined automatically based on image dimension, keeping patches nearly square.)", show_default=True)
 @click.option("--disable-output-artifact", "generate_output_artifact", help="Disable producing output artifact containing final model and predictions.", default=None, flag_value=False, is_flag=True)
 @click.option("--force-output-artifact", "generate_output_artifact", help="Force producing output artifact containing final model and predictions.", default=None, flag_value=True, is_flag=True)
 @click.option("--set", "config_overrides", type=SetParamOptionType(), multiple=True, default=None, help=(
@@ -48,6 +49,7 @@ def train_command(
     save_iters,
     eval_few_iters,
     eval_all_iters,
+    eval_num_patches,
     generate_output_artifact=None,
     logger="none",
     config_overrides=None,
@@ -142,6 +144,7 @@ def train_command(
             save_iters=save_iters,
             eval_all_iters=eval_all_iters,
             eval_few_iters=eval_few_iters,
+            eval_num_patches=eval_num_patches,
             logger=build_logger(_loggers),
             generate_output_artifact=generate_output_artifact,
             config_overrides=_config_overrides,
