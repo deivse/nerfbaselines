@@ -123,7 +123,7 @@ def compute_metrics(pred, gt, *, mask=None, reduce: bool = True, run_lpips_vgg: 
     return out
 
 
-def calculate_patch_spec(image_shape: Tuple[int, int], num_patches_small_axis: int) -> PatchSpec:
+def calculate_patch_sizes(image_shape: Tuple[int, int], patch_spec: PatchSpec) -> Tuple[Tuple[int, int], Tuple[int, int]]:
     """
     Calculate patch size and grid based on image shape and number of patches on the smaller axis.
 
@@ -135,6 +135,7 @@ def calculate_patch_spec(image_shape: Tuple[int, int], num_patches_small_axis: i
         - patch_size: A tuple (patch_height, patch_width).
         - patch_grid: A tuple (num_patches_height, num_patches_width).
     """
+    num_patches_small_axis = patch_spec.num_patches_small_axis
     small_axis = np.argmin([image_shape[0], image_shape[1]])
     large_axis = 1 - small_axis
     patch_size_small_axis = int(image_shape[small_axis] // num_patches_small_axis)
@@ -147,7 +148,7 @@ def calculate_patch_spec(image_shape: Tuple[int, int], num_patches_small_axis: i
     else:
         patch_grid = (int(num_patches_large_axis), num_patches_small_axis)
         patch_size = (patch_size_large_axis, patch_size_small_axis)
-    return PatchSpec(patch_size=patch_size, patch_grid=patch_grid)
+    return patch_size, patch_grid
 
 
 @run_on_host()
@@ -166,8 +167,7 @@ def compute_per_patch_metrics(pred, gt, sfm_points_img, *, mask=None, reduce: bo
         gt = gt * mask
 
     patches = []
-    patch_grid = patch_spec.patch_grid
-    patch_size = patch_spec.patch_size
+    patch_size, patch_grid = calculate_patch_sizes((gt.shape[1], gt.shape[2]), patch_spec)
     for i in range(patch_grid[0]):
         for j in range(patch_grid[1]):
             p_start = (i * patch_size[0], j * patch_size[1])
@@ -241,7 +241,7 @@ def evaluate(
                 raise RuntimeError(
                     f"Dataset scene mismatch between predictions and provided dataset. Predictions dataset scene: {nb_info['render_dataset_metadata'].get('scene')}, provided dataset scene: {dataset['metadata'].get('scene')}"
                 )
-            
+
             pred_ext = next(p.suffix for p in (predictions_path / "color").glob("**/*") if p.is_file())
             predictions_filenames_no_ext = set(p.stem for p in (predictions_path / "color").glob("**/*") if p.is_file())
             if len(predictions_filenames_no_ext) != len(dataset["image_paths"]):
@@ -268,6 +268,8 @@ def evaluate(
             gt_masks_root = None
             gt_masks = None
             gt_mask_paths = None
+
+        patch_spec = PatchSpec(num_patches_small_axis=num_patches)
         with suppress_type_checks():
             from pprint import pprint
 
@@ -287,7 +289,6 @@ def evaluate(
 
             image_sizes = dataset["cameras"].image_sizes
             assert all((image_sizes[i] == image_sizes[i + 1]).all() for i in range(len(image_sizes) - 1)), "All images must have the same size"
-            patch_spec = calculate_patch_spec((image_sizes[0][1], image_sizes[0][0]), num_patches)
 
             # Evaluate the prediction
             with tqdm(desc=description, dynamic_ncols=True, total=len(relpaths)) as progress:

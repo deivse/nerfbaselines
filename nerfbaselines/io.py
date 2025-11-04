@@ -513,10 +513,7 @@ def serialize_evaluation_results(
     if render_dataset_metadata is not None:
         out["render_dataset_metadata"] = render_dataset_metadata
 
-    out["patch_info"] = {
-        "patch_size": list(patch_spec.patch_size),
-        "patch_grid": list(patch_spec.patch_grid),
-    }
+    out["num_patches_small_axis"] = patch_spec.num_patches_small_axis
 
     def round_dict_values(d: Dict):
         out = {}

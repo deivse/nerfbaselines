@@ -548,8 +548,7 @@ class Method(Protocol):
 
 
 class PatchSpec(NamedTuple):
-    patch_size: Tuple[int, int]
-    patch_grid: Tuple[int, int]
+    num_patches_small_axis: int
 
 
 @runtime_checkable

@@ -16,6 +16,7 @@ import tqdm.contrib.logging
 import numpy as np
 from PIL import Image
 import nerfbaselines
+from nerfbaselines._types import PatchSpec
 from . import (
     Method,
     MethodSpec,
@@ -39,7 +40,6 @@ from .utils import (
 )
 from .datasets import dataset_index_select
 from .evaluation import (
-    calculate_patch_spec,
     render_all_images,
     evaluate,
     build_evaluation_protocol,
@@ -307,8 +307,7 @@ def eval_few(method: Method, logger: Logger, dataset: Dataset, *, num_patches: i
     predictions = evaluation_protocol.render(method, dataset_slice)
     elapsed = time.perf_counter() - start
 
-    patch_spec = calculate_patch_spec((image_sizes[0][1], image_sizes[0][0]), num_patches)
-    _metrics = evaluation_protocol.evaluate(predictions, dataset_slice, patch_spec)
+    _metrics = evaluation_protocol.evaluate(predictions, dataset_slice, PatchSpec(num_patches_small_axis=num_patches))
     metrics = cast(Dict[str, Union[float, int, str]], _metrics)
     del _metrics
     w, h = dataset_slice["cameras"].image_sizes[0]
