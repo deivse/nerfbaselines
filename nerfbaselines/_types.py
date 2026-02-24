@@ -72,7 +72,7 @@ DatasetFeature = Literal[
     "images_points2D_xy",
     "dense_points3D_path",
     "dense_points3D_normals_path",
-    "trained_splat_path",
+    "initialization_splat_path",
 ]
 TTensor = TypeVar("TTensor", np.ndarray, "torch.Tensor", "jnp.ndarray")
 TTensor_co = TypeVar("TTensor_co", np.ndarray, "torch.Tensor", "jnp.ndarray", covariant=True)
@@ -299,7 +299,7 @@ class _IncompleteDataset(TypedDict, total=True):
 
     dense_points3D_path: NotRequired[Optional[str]]
     dense_points3D_normals_path: NotRequired[Optional[str]]
-    trained_splat_path: NotRequired[Optional[str]]
+    initialization_splat_path: NotRequired[Optional[str]]
 
 
 class UnloadedDataset(_IncompleteDataset):
@@ -326,7 +326,7 @@ def new_dataset(
     points3D_error: Optional[np.ndarray] = ...,  # [M]
     dense_points3D_path: Optional[str] = ...,
     dense_points3D_normals_path: Optional[str] = ...,
-    trained_splat_path: Optional[str] = ...,
+    initialization_splat_path: Optional[str] = ...,
     images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
     images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
     metadata: Optional[Dict] = ...,
@@ -351,7 +351,7 @@ def new_dataset(
     images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
     dense_points3D_path: Optional[str] = ...,
     dense_points3D_normals_path: Optional[str] = ...,
-    trained_splat_path: Optional[str] = ...,
+    initialization_splat_path: Optional[str] = ...,
     metadata: Optional[Dict] = ...,
 ) -> UnloadedDataset: ...
 
@@ -371,7 +371,7 @@ def new_dataset(
     points3D_normals: Optional[np.ndarray] = None,  # [M, 3]
     dense_points3D_path: Optional[str] = None,
     dense_points3D_normals_path: Optional[str] = None,
-    trained_splat_path: Optional[str] = None,
+    initialization_splat_path: Optional[str] = None,
     images_points3D_indices: Optional[Sequence[np.ndarray]] = None,  # [N][<M]
     images_points2D_xy: Optional[Sequence[np.ndarray]] = None,  # [N][<M, 2]
     metadata: Optional[Dict] = None,
@@ -400,7 +400,7 @@ def new_dataset(
         images_points2D_xy=list(images_points2D_xy) if images_points2D_xy is not None else None,
         dense_points3D_path=dense_points3D_path,
         dense_points3D_normals_path=dense_points3D_normals_path,
-        trained_splat_path=trained_splat_path,
+        initialization_splat_path=initialization_splat_path,
         metadata=metadata,
     )
 

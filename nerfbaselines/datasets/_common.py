@@ -567,7 +567,7 @@ def dataset_index_select(dataset: TDataset, i: Union[slice, list, np.ndarray]) -
         "points3D_error",
         "dense_points3D_path",
         "dense_points3D_normals_path",
-        "trained_splat_path",
+        "initialization_splat_path",
         "metadata"}})
     return cast(TDataset, _dataset)
 
