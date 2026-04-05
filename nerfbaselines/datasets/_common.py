@@ -564,7 +564,8 @@ def dataset_index_select(dataset: TDataset, i: Union[slice, list, np.ndarray]) -
         "points3D_xyz", 
         "points3D_rgb", 
         "points3D_error",
-        "metadata"}})
+        "metadata",
+        "custom_features"}})
     return cast(TDataset, _dataset)
 
 

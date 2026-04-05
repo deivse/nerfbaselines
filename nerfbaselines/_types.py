@@ -63,7 +63,7 @@ CameraModel = Literal["pinhole", "opencv", "opencv_fisheye", "full_opencv"]
 BackendName = Literal["conda", "docker", "apptainer", "python"]
 DatasetFeature = Literal["color", "points3D_xyz", "points3D_rgb", 
                          "images_points3D_indices", "images_points2D_xy",
-                         "points3D_error"]
+                         "points3D_error", "custom_features"]
 TTensor = TypeVar("TTensor", np.ndarray, "torch.Tensor", "jnp.ndarray")
 TTensor_co = TypeVar("TTensor_co", np.ndarray, "torch.Tensor", "jnp.ndarray", covariant=True)
 
@@ -295,6 +295,10 @@ class _IncompleteDataset(TypedDict, total=True):
     images_points3D_indices: Optional[List[np.ndarray]]  # [N][<M]
     images_points2D_xy: Optional[List[np.ndarray]]  # [N][<M, 2]
 
+    # Custom data that can be added by the dataset loader for third-party use, e.g. for method-specific features.
+    # This is not used by the core method implementations and can be safely ignored.
+    custom_features: NotRequired[Dict[str, Any]]  
+
 
 class UnloadedDataset(_IncompleteDataset):
     images: NotRequired[Optional[Union[np.ndarray, List[np.ndarray]]]]  # [N][H, W, 3]
@@ -318,6 +322,7 @@ def new_dataset(*,
                 points3D_error: Optional[np.ndarray] = ...,  # [M]
                 images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
                 images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
+                custom_features: Optional[Dict[str, Any]] = ...,
                 metadata: Optional[Dict] = ...) -> Dataset:
     ...
 
@@ -336,6 +341,7 @@ def new_dataset(*,
                 points3D_error: Optional[np.ndarray] = ...,  # [M]
                 images_points3D_indices: Optional[Sequence[np.ndarray]] = ...,  # [N][<M]
                 images_points2D_xy: Optional[Sequence[np.ndarray]] = ...,  # [N][<M, 2]
+                custom_features: Optional[Dict[str, Any]] = ...,
                 metadata: Optional[Dict] = ...) -> UnloadedDataset:
     ...
 
@@ -353,6 +359,7 @@ def new_dataset(*,
                 points3D_error: Optional[np.ndarray] = None,  # [M]
                 images_points3D_indices: Optional[Sequence[np.ndarray]] = None,  # [N][<M]
                 images_points2D_xy: Optional[Sequence[np.ndarray]] = None,  # [N][<M, 2]
+                custom_features: Optional[Dict[str, Any]] = None,
                 metadata: Optional[Dict] = None) -> Union[UnloadedDataset, Dataset]:
     if image_paths_root is None:
         image_paths_root = os.path.commonpath(image_paths)
@@ -375,6 +382,7 @@ def new_dataset(*,
         points3D_error=points3D_error,
         images_points3D_indices=list(images_points3D_indices) if images_points3D_indices is not None else None,
         images_points2D_xy=list(images_points2D_xy) if images_points2D_xy is not None else None,
+        custom_features=(custom_features or {}),
         metadata=metadata
     )
 
